@@ -1,8 +1,11 @@
 const INTERVALS = ["DAY", "WEEK", "MONTH", "YEAR"];
 const STATUS_VALUES = ["active", "paused", "cancelled"];
+
 import { ALLOWED_CURRENCIES } from "../constants/allowedCurrencies.js";
 import { ALLOWED_COUNTRY_CODES } from "../constants/allowedCountryCodes.js";
 import { validateZipAndProvince } from "../services/zipValidation.service.js";
+
+/* ---------------- HELPERS ---------------- */
 
 function isEmpty(val) {
   return val === null || val === undefined || val === "";
@@ -11,6 +14,8 @@ function isEmpty(val) {
 function isPositiveInt(val) {
   return Number.isInteger(Number(val)) && Number(val) > 0;
 }
+
+/* ---------------- REQUIRED FIELDS ---------------- */
 
 const OPTIONAL_FIELDS = [
   "Delivery company",
@@ -31,6 +36,8 @@ function validateRequiredFields(row, rowNumber, errors) {
   });
 }
 
+/* ---------------- BASIC VALIDATIONS ---------------- */
+
 function validateStatus(row, rowNumber, errors) {
   if (
     row.Status &&
@@ -44,6 +51,40 @@ function validateStatus(row, rowNumber, errors) {
   }
 }
 
+/* ---------------- DATE VALIDATION ---------------- */
+
+function validateDate(dateValue, rowNumber, field, errors) {
+  if (!dateValue) return;
+
+  // Excel numeric date (very common in XLSX)
+  if (!isNaN(dateValue)) {
+    errors.push({
+      row: rowNumber,
+      field,
+      message:
+        "Excel date detected. Please change cell format to Text and use YYYY-MM-DD"
+    });
+    return;
+  }
+
+  const value = String(dateValue).trim();
+
+  const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+  const ISO_DATE_TIME =
+    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
+
+  if (!ISO_DATE.test(value) && !ISO_DATE_TIME.test(value)) {
+    errors.push({
+      row: rowNumber,
+      field,
+      message:
+        "Invalid date format. Use YYYY-MM-DD or YYYY-MM-DDTHH:mm:ssZ (UTC)"
+    });
+  }
+}
+
+/* ---------------- INTERVAL VALIDATION ---------------- */
+
 function validateInterval({
   type,
   count,
@@ -52,6 +93,9 @@ function validateInterval({
   rowNumber,
   errors
 }) {
+  // 🔑 Guard: required-field validation already done
+  if (!type || !count) return;
+
   if (!INTERVALS.includes(type)) {
     errors.push({
       row: rowNumber,
@@ -120,6 +164,8 @@ function validateBillingDeliveryRelation(
   }
 }
 
+/* ---------------- VARIANT & MONEY ---------------- */
+
 function validateVariant(row, rowNumber, errors) {
   if (!isPositiveInt(row["Variant quantity"])) {
     errors.push({
@@ -141,10 +187,7 @@ function validateVariant(row, rowNumber, errors) {
 function validateCurrency(row, rowNumber, errors) {
   const currency = row["Currency Code"]?.toUpperCase();
 
-  if (
-    typeof currency !== "string" ||
-    currency.length !== 3
-  ) {
+  if (typeof currency !== "string" || currency.length !== 3) {
     errors.push({
       row: rowNumber,
       field: "Currency Code",
@@ -161,6 +204,8 @@ function validateCurrency(row, rowNumber, errors) {
     });
   }
 }
+
+/* ---------------- ADDRESS VALIDATION ---------------- */
 
 async function validateCountryZipProvince(row, rowNumber, errors) {
   const countryCodeRaw = row["Delivery country code"];
@@ -213,25 +258,7 @@ async function validateCountryZipProvince(row, rowNumber, errors) {
   }
 }
 
-function validateDate(dateValue, rowNumber, field, errors) {
-  if (!dateValue) return;
-
-  // Normalize value to string
-  const value = String(dateValue).trim();
-
-  const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
-  const ISO_DATE_TIME =
-    /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/;
-
-  if (!ISO_DATE.test(value) && !ISO_DATE_TIME.test(value)) {
-    errors.push({
-      row: rowNumber,
-      field,
-      message:
-        "Invalid date format. Use YYYY-MM-DD or YYYY-MM-DDTHH:mm:ssZ (UTC)"
-    });
-  }
-}
+/* ---------------- MAIN EXPORT ---------------- */
 
 export async function validateSubscriptionRow(row, index) {
   const errors = [];
@@ -241,8 +268,13 @@ export async function validateSubscriptionRow(row, index) {
   validateRequiredFields(row, rowNumber, errors);
   validateStatus(row, rowNumber, errors);
 
-  /* ---------- DATE VALIDATION (NEW) ---------- */
-   validateDate(row["Next order date"],rowNumber,"Next order date",errors);
+  /* ---------- DATE ---------- */
+  validateDate(
+    row["Next order date"],
+    rowNumber,
+    "Next order date",
+    errors
+  );
 
   /* ---------- INTERVALS ---------- */
   const billingType = row["Billing interval type"]?.toUpperCase();
