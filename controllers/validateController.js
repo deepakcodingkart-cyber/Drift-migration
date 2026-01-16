@@ -12,6 +12,18 @@ export async function validateCsvController(req, res) {
       });
     }
 
+    // ✅ FILE TYPE VALIDATION (YAHI RAKHNA HAI)
+    if (
+      !req.file.mimetype.includes("csv") &&
+      !req.file.mimetype.includes("excel") &&
+      !req.file.mimetype.includes("spreadsheetml")
+    ) {
+      return res.status(400).json({
+        success: false,
+        message: "Only CSV or Excel files are allowed"
+      });
+    }
+
     const rows = parseFile(req.file.buffer);
 
     const allErrors = [];
