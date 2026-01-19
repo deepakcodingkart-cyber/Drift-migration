@@ -1,7 +1,6 @@
-import parseFile from "../utils/fileParser.js";
+import { parseFileStream } from "../utils/fileParser.js";
 import { validateSubscriptionRow } from "../validators/subscriptionRow.validator.js";
-import { shopifyValidation } from "../validators/shopify.validator.js";
-
+// import { shopifyValidation } from "../validators/shopify.validator.js";
 
 export async function validateCsvController(req, res) {
   try {
@@ -12,7 +11,7 @@ export async function validateCsvController(req, res) {
       });
     }
 
-    // ✅ FILE TYPE VALIDATION (YAHI RAKHNA HAI)
+    // ✅ FILE TYPE VALIDATION (UNCHANGED)
     if (
       !req.file.mimetype.includes("csv") &&
       !req.file.mimetype.includes("excel") &&
@@ -24,38 +23,38 @@ export async function validateCsvController(req, res) {
       });
     }
 
-    const rows = parseFile(req.file.buffer);
 
     const allErrors = [];
     const validRows = [];
 
-    for (let index = 0; index < rows.length; index++) {
-      const row = rows[index];
+    let rowIndex = 0;
+
+    await parseFileStream(req.file.buffer, async (row) => {
+      const index = rowIndex++;
 
       /* ---------- STEP 1: LOCAL VALIDATION ---------- */
       const rowErrors = await validateSubscriptionRow(row, index);
 
       /* ---------- STEP 2: SHOPIFY VALIDATION ---------- */
-      const shopifyErrors = await shopifyValidation(row, index);
+      // const shopifyErrors = await shopifyValidation(row, index);
 
-      /* ---------- COLLECT ALL ERRORS ---------- */
       const combinedErrors = [
         ...rowErrors,
-        ...shopifyErrors
+        // ...shopifyErrors
       ];
 
       if (combinedErrors.length > 0) {
         allErrors.push(...combinedErrors);
-        continue;
+        return;
       }
 
       /* ---------- STEP 3: FULLY VALID ---------- */
       validRows.push(row);
-    }
+    });
 
     return res.json({
       success: true,
-      totalRows: rows.length,
+      totalRows: rowIndex,
       validRows: validRows.length,
       errorCount: allErrors.length,
       errors: allErrors,
@@ -63,6 +62,7 @@ export async function validateCsvController(req, res) {
     });
 
   } catch (err) {
+    console.error("Error in validateCsvController:", err);
     return res.status(500).json({
       success: false,
       message: "Failed to parse / validate file",

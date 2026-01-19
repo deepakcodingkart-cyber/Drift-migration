@@ -1,112 +1,50 @@
-// import XLSX from "xlsx";
 
-// export default function parseFile(buffer) {
-//   const workbook = XLSX.read(buffer, { type: "buffer" });
-//   const sheetName = workbook.SheetNames[0];
-//   const sheet = workbook.Sheets[sheetName];
 
-//   const rows = XLSX.utils.sheet_to_json(sheet, {
-//     header: 1,
-//     defval: null,
-//     raw: false
-//   });
+import { parse } from "csv-parse";
 
-//   if (!rows || rows.length < 2) {
-//     return [];
-//   }
+export function parseFileStream(buffer, onRow = () => {}) {
+  return new Promise((resolve, reject) => {
+    const parser = parse({ trim: true });
 
-//   // 🔥 HEADERS (REMOVE UNWANTED COLUMN)
-//   const headers = rows[0]
-//     .map(h => String(h).trim())
-//     .filter(h => h !== "Columns in red are mandatory"); // 👈 REMOVE THIS COLUMN
+    let headers = [];
+    let headerIndexMap = {};
+    let rowIndex = 0;
 
-//   // Data starts after header + description row
-//   const dataRows = rows.slice(2);
+    parser.on("readable", () => {
+      let record;
+      while ((record = parser.read())) {
+        rowIndex++;
 
-//   const result = dataRows
-//     .map((row) => {
-//       const obj = {};
+        if (rowIndex === 1) {
+          headers = record.filter(
+            h => h !== "Columns in red are mandatory"
+          );
+          record.forEach((h, i) => (headerIndexMap[h] = i));
+          continue;
+        }
 
-//       headers.forEach((header, headerIndex) => {
-//         // Find actual column index from original header row
-//         const originalIndex = rows[0].indexOf(header);
-//         obj[header] = row[originalIndex] ?? null;
-//       });
+        if (rowIndex === 2) continue;
 
-//       // ✅ REAL DATA CHECK (skip example/comment rows)
-//       const hasRealData =
-//         obj["Customer email"] ||
-//         obj["Variant ID"] ||
-//         obj["Variant quantity"];
+        const obj = {};
+        headers.forEach(h => {
+          obj[h] = record[headerIndexMap[h]] ?? null;
+        });
 
-//       return hasRealData ? obj : null;
-//     })
-//     .filter(Boolean);
+        if (
+          obj["Customer email"] ||
+          obj["Variant ID"] ||
+          obj["Variant quantity"]
+        ) {
+          onRow(obj); // ✅ safe now
+        }
+      }
+    });
 
-//   return result;
-// }
+    parser.on("end", resolve);
+    parser.on("error", reject);
 
-import XLSX from "xlsx";
-
-/**
- * Converts CSV or XLSX buffer into normalized row objects
- * Output format remains SAME as before
- */
-export default function parseFile(buffer) {
-  // 1️⃣ Read workbook (CSV or XLSX both supported)
-  const workbook = XLSX.read(buffer, { type: "buffer" });
-
-  // 2️⃣ First sheet
-  const sheetName = workbook.SheetNames[0];
-  const sheet = workbook.Sheets[sheetName];
-
-  // 3️⃣ Convert sheet → CSV
-  const csv = XLSX.utils.sheet_to_csv(sheet, {
-    blankrows: false
+    parser.write(buffer);
+    parser.end();
   });
-
-  // 4️⃣ CSV → JSON rows (array of arrays)
-  const rows = XLSX.utils.sheet_to_json(
-    XLSX.read(csv, { type: "string" }).Sheets[
-      XLSX.read(csv, { type: "string" }).SheetNames[0]
-    ],
-    {
-      header: 1,
-      defval: null,
-      raw: false
-    }
-  );
-
-  if (!rows || rows.length < 2) return [];
-
-  /* ---------- HEADERS ---------- */
-  const headers = rows[0]
-    .map(h => String(h).trim())
-    .filter(h => h !== "Columns in red are mandatory");
-
-  // Data starts after header + description row
-  const dataRows = rows.slice(2);
-
-  /* ---------- BUILD OBJECT ROWS ---------- */
-  const result = dataRows
-    .map(row => {
-      const obj = {};
-
-      headers.forEach(header => {
-        const originalIndex = rows[0].indexOf(header);
-        obj[header] = row[originalIndex] ?? null;
-      });
-
-      // Skip empty/example rows
-      const hasRealData =
-        obj["Customer email"] ||
-        obj["Variant ID"] ||
-        obj["Variant quantity"];
-
-      return hasRealData ? obj : null;
-    })
-    .filter(Boolean);
-
-  return result;
 }
 
