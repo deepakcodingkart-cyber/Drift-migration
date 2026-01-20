@@ -5,8 +5,9 @@ import express from "express";
 import cors from "cors";
 import multer from "multer";
 
-import validateRoutes from "./routes/validateRoute.js";
+// import validateRoutes from "./routes/validateRoute.js";
 import uploadRoutes from "./routes/uploadRoute.js";
+import migrationRoutes from "./routes/migrationRoute.js";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -19,8 +20,9 @@ const upload = multer({
   limits: { fileSize: 250 * 1024 * 1024 }
 });
 
-app.use("/validate", validateRoutes(upload));
+// app.use("/validate", validateRoutes(upload));
 app.use("/upload", uploadRoutes(upload));
+app.use("/migrations", migrationRoutes());
 
 app.listen(PORT, () => {
   console.log(`✅ Migration Validation API running on ${PORT}`);
