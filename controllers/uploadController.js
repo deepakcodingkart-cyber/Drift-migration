@@ -2,19 +2,20 @@ import path from "path";
 import fs from "fs-extra";
 
 import { mergeChunksIfComplete } from "../utils/chunkFile.util.js";
-import { createMigration, updateMigration } from "../services/migration.service.js";
-// OPTIONAL (if you add idempotency check later)
-// import { findMigrationByFilePath } from "../services/migration.service.js";
-
-/* ===== FUTURE S3 IMPORTS (COMMENTED) ===== */
-// import { uploadChunkToS3, completeS3Upload } from "../utils/s3Chunk.util.js";
+import { getMigrationById } from "../services/migration.service.js";
+import { upsertMigrationFile } from "../services/migrationFiles.service.js";
 
 const TEMP_DIR = "./temp";
 const UPLOAD_DIR = "./uploads";
 
-const MAX_FILE_SIZE = 25 * 1024 * 1024; // 25MB
-const MAX_CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
-const MAX_CHUNKS = 5;
+const MAX_FILE_SIZE = 25 * 1024 * 1024;
+const MAX_CHUNK_SIZE = 5 * 1024 * 1024;
+
+const FILE_NAME_MAP = {
+  subscription_csv: "subscription.csv",
+  stripe_payment_csv: "payment_stripe.csv",
+  paypal_payment_csv: "payment_paypal.csv"
+};
 
 fs.ensureDirSync(TEMP_DIR);
 fs.ensureDirSync(UPLOAD_DIR);
@@ -34,151 +35,112 @@ export async function uploadChunkController(req, res) {
       chunkIndex,
       totalChunks,
       fileSize,
-
-      // migration metadata
-      shop_id,
-      shop_domain,
-      migration_type,
-      file_type,
-      created_by
+      migration_id,
+      file_type
     } = req.body;
 
-    /* ---------- METADATA VALIDATION ---------- */
-    if (
-      !shop_id ||
-      !shop_domain ||
-      !migration_type ||
-      !file_type ||
-      !created_by
-    ) {
+    /* ---------- STRICT VALIDATION ---------- */
+    if (!migration_id) {
       return res.status(400).json({
         success: false,
-        message: "Missing migration metadata"
+        message: "migration_id is required"
+      });
+    }
+    if (!fileName || !chunkIndex || !totalChunks || !fileSize || !file_type) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing required fields"
       });
     }
 
-    /* ---------- SAFETY VALIDATIONS ---------- */
     if (Number(fileSize) > MAX_FILE_SIZE) {
       return res.status(400).json({
         success: false,
-        message: "File exceeds 25MB limit"
-      });
-    }
-
-    if (Number(totalChunks) > MAX_CHUNKS) {
-      return res.status(400).json({
-        success: false,
-        message: "Too many chunks"
+        message: "File too large"
       });
     }
 
     if (req.file.size > MAX_CHUNK_SIZE) {
       return res.status(400).json({
         success: false,
-        message: "Chunk exceeds 5MB"
+        message: "Chunk too large"
       });
     }
 
-    /* ---------- SAFE TEMP FILE NAME ---------- */
-    const safeFileName = `${shop_id}_${fileName}`;
+    /* ---------- VERIFY MIGRATION EXISTS ---------- */
+    const migration = await getMigrationById(migration_id);
+    if (!migration) {
+      return res.status(404).json({
+        success: false,
+        message: "Migration not found"
+      });
+    }
 
     /* ---------- SAVE CHUNK ---------- */
-    const chunkDir = path.join(TEMP_DIR, safeFileName);
+    const tempKey = `${migration_id}_${fileName}`;
+    const chunkDir = path.join(TEMP_DIR, tempKey);
+
     await fs.ensureDir(chunkDir);
+    await fs.writeFile(
+      path.join(chunkDir, String(chunkIndex)),
+      req.file.buffer
+    );
 
-    const chunkPath = path.join(chunkDir, String(chunkIndex));
-    await fs.writeFile(chunkPath, req.file.buffer);
-
-    /* ---------- TRY MERGE ---------- */
-    const isMerged = await mergeChunksIfComplete({
+    /* ---------- MERGE ---------- */
+    const merged = await mergeChunksIfComplete({
       chunkDir,
-      fileName: safeFileName,
+      fileName: tempKey,
       totalChunks,
       uploadDir: UPLOAD_DIR
     });
 
-     /* ======================================================
-           ============ FUTURE: S3 MULTIPART (COMMENTED) =========
-           ====================================================== */
-        /*
-        await uploadChunkToS3({
-          fileName: safeFileName,
-          chunkIndex,
-          totalChunks,
-          buffer: req.file.buffer,
-          mimeType: req.file.mimetype
-        });
-    
-        if (Number(chunkIndex) === Number(totalChunks) - 1) {
-          await completeS3Upload({ fileName: safeFileName });
-        }
-        */
-
-    /* ---------- FINAL MERGE HANDLING ---------- */
-    if (isMerged) {
-      const mergedTempPath = path.join(UPLOAD_DIR, safeFileName);
-            // OPTIONAL idempotency guard (enable later if needed)
-       /*
-            const existing = await findMigrationByFilePath(finalFilePath);
-            if (existing) {
-              return res.json({
-                success: true,
-                stage: "upload_completed",
-                migration_id: existing.id,
-                status: existing.status
-              });
-            }
-            */
-      
-      // 1️⃣ Create migration DB record
-      const migration = await createMigration({
-        shop_id,
-        shop_domain,
-        migration_type,
-        file_type,
-        file_path: "", // temp, will update below
-        status: "uploaded",
-        created_by
-      });
-
-      // 2️⃣ Create migration folder
-      const migrationDir = path.join(
-        UPLOAD_DIR,
-        "migrations",
-        String(migration.id)
-      );
-      await fs.ensureDir(migrationDir);
-
-      // 3️⃣ Move merged file → original.csv
-      const finalFilePath = path.join(migrationDir, "original.csv");
-      await fs.move(mergedTempPath, finalFilePath, { overwrite: true });
-
-      // 4️⃣ (Optional but recommended) Make file read-only
-      await fs.chmod(finalFilePath, 0o444);
-
-      // 5️⃣ Update migration with final file path
-      await updateMigration(migration.id, {
-        file_path: finalFilePath
-      });
-
+    if (!merged) {
       return res.json({
         success: true,
-        stage: "upload_completed",
-        migration_id: migration.id,
-        status: "uploaded"
+        stage: "chunk_received"
       });
     }
 
-    /* ---------- NORMAL CHUNK RESPONSE ---------- */
+    /* ---------- FINAL FILE SAVE ---------- */
+    const originalDir = path.join(
+      UPLOAD_DIR,
+      "migrations",
+      String(migration.id),
+      "original"
+    );
+
+    await fs.ensureDir(originalDir);
+
+    const finalFileName = FILE_NAME_MAP[file_type] || fileName;
+    const finalFilePath = path.join(originalDir, finalFileName);
+
+    await fs.move(
+      path.join(UPLOAD_DIR, tempKey),
+      finalFilePath,
+      { overwrite: true }
+    );
+
+    await fs.chmod(finalFilePath, 0o444);
+
+    /* ---------- DB ENTRY (migration_files) ---------- */
+    await upsertMigrationFile({
+      migration_id: migration.id,
+      file_type,
+      file_name: finalFileName,
+      file_path: finalFilePath
+    });
+
     return res.json({
       success: true,
-      stage: "chunk_received"
+      stage: "upload_completed",
+      migration_id: migration.id
     });
+
   } catch (err) {
     console.error("uploadChunkController error:", err);
     return res.status(500).json({
       success: false,
-      message: "Chunk upload failed",
+      message: "Upload failed",
       error: err.message
     });
   }

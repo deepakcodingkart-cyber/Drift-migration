@@ -1,34 +1,29 @@
 import { getJobClient } from "../db/jobClient.js";
 
 /* ================================
-   CREATE MIGRATION
+   CREATE MIGRATION (ONCE)
 ================================ */
-export async function createMigration(data) {
+export async function createMigration({
+  shop_id,
+  shop_domain,
+  migration_type,
+  created_by
+}) {
   const client = await getJobClient();
 
   const res = await client.query(
     `
-    INSERT INTO migrationsapp (
+    INSERT INTO migrations (
       shop_id,
       shop_domain,
       migration_type,
-      file_type,
-      file_path,
       status,
       created_by
     )
-    VALUES ($1, $2, $3, $4, $5, $6, $7)
+    VALUES ($1, $2, $3, 'uploaded', $4)
     RETURNING *
     `,
-    [
-      data.shop_id,
-      data.shop_domain,
-      data.migration_type,
-      data.file_type,
-      data.file_path,
-      data.status,
-      data.created_by
-    ]
+    [shop_id, shop_domain, migration_type, created_by]
   );
 
   return res.rows[0];
@@ -68,24 +63,18 @@ export async function updateMigration(migrationId, updates) {
 }
 
 /* ================================
-    GET MIGRATION BY ID
+   GET MIGRATION BY ID
 ================================ */
-
-export async function getMigrationById(migrationId) {
-  if (!migrationId) {
-    throw new Error("getMigrationById: migrationId is required");
-  }
-
+export async function getMigrationById(migration_id) {
   const client = await getJobClient();
 
   const res = await client.query(
     `
     SELECT *
-    FROM migrationsapp
+    FROM migrations
     WHERE id = $1
-    LIMIT 1
     `,
-    [migrationId]
+    [migration_id]
   );
 
   return res.rows[0] || null;

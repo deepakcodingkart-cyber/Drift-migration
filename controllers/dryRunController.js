@@ -1,4 +1,4 @@
-import { getMigrationById, updateMigration } from "../services/migration.service.js";
+import { createMigration, getMigrationById, updateMigration } from "../services/migration.service.js";
 import { runDryRun } from "../services/dryRunService.js";
 
 export async function dryRunController(req, res) {
@@ -37,6 +37,44 @@ export async function dryRunController(req, res) {
     res.status(500).json({
       success: false,
       message: "Dry run failed",
+      error: err.message
+    });
+  }
+}
+
+export async function createMigrationController(req, res) {
+  try {
+    const {
+      shop_id,
+      shop_domain,
+      migration_type,
+      created_by
+    } = req.body;
+
+    if (!shop_id || !shop_domain || !migration_type) {
+      return res.status(400).json({
+        success: false,
+        message: "Missing required fields"
+      });
+    }
+
+    const migration = await createMigration({
+      shop_id,
+      shop_domain,
+      migration_type,
+      created_by
+    });
+
+    return res.json({
+      success: true,
+      migration_id: migration.id
+    });
+
+  } catch (err) {
+    console.error("createMigrationController error:", err);
+    return res.status(500).json({
+      success: false,
+      message: "Failed to create migration",
       error: err.message
     });
   }

@@ -1,5 +1,5 @@
 import express from "express";
-import { dryRunController } from "../controllers/dryRunController.js";
+import { createMigrationController, dryRunController } from "../controllers/dryRunController.js";
 
 const router = express.Router();
 
@@ -11,5 +11,7 @@ const router = express.Router();
 
 export default function () {
   router.post("/:migration_id/dry-run", dryRunController);
+  router.post("/create", createMigrationController);
+
   return router;
 }
