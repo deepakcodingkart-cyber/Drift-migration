@@ -3,10 +3,14 @@ import { getJobClient } from "../db/jobClient.js";
 /* ================================
    CREATE MIGRATION (ONCE)
 ================================ */
+
+/**
+ * CREATE MIGRATION (NO FILES HERE)
+ */
 export async function createMigration({
   shop_id,
   shop_domain,
-  migration_type,
+  title,
   created_by
 }) {
   const client = await getJobClient();
@@ -16,14 +20,14 @@ export async function createMigration({
     INSERT INTO migrations (
       shop_id,
       shop_domain,
-      migration_type,
+      title,
       status,
       created_by
     )
-    VALUES ($1, $2, $3, 'uploaded', $4)
+    VALUES ($1, $2, $3, 'created', $4)
     RETURNING *
     `,
-    [shop_id, shop_domain, migration_type, created_by]
+    [shop_id, shop_domain, title, created_by]
   );
 
   return res.rows[0];

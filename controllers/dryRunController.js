@@ -74,27 +74,28 @@ export async function createMigrationController(req, res) {
     const {
       shop_id,
       shop_domain,
-      migration_type,
+      title,
       created_by
     } = req.body;
 
-    if (!shop_id || !shop_domain || !migration_type) {
+    if (!shop_id || !shop_domain || !title) {
       return res.status(400).json({
         success: false,
-        message: "Missing required fields"
+        message: "shop_id, shop_domain and title are required"
       });
     }
 
     const migration = await createMigration({
       shop_id,
       shop_domain,
-      migration_type,
+      title,
       created_by
     });
 
     return res.json({
       success: true,
-      migration_id: migration.id
+      migration_id: migration.id,
+      status: migration.status
     });
 
   } catch (err) {
@@ -105,4 +106,4 @@ export async function createMigrationController(req, res) {
       error: err.message
     });
   }
-}
+} 

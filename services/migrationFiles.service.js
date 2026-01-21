@@ -5,53 +5,57 @@ import { getJobClient } from "../db/jobClient.js";
 ========================================= */
 export async function upsertMigrationFile({
   migration_id,
+  migration_type,
   file_type,
   file_name,
   file_path
 }) {
-  console.log("Upserting migration file:", {
-    migration_id,
-    file_type,
-    file_name,
-    file_path
-  });
   const client = await getJobClient();
 
   await client.query("BEGIN");
 
-  // mark existing file of same type as replaced
   await client.query(
     `
-    UPDATE migration_files
-    SET status = 'replaced'
+    DELETE FROM migration_files
     WHERE migration_id = $1
       AND file_type = $2
     `,
     [migration_id, file_type]
   );
 
-  // insert new file
   await client.query(
     `
     INSERT INTO migration_files (
       migration_id,
+      migration_type,
       file_type,
       file_name,
       file_path,
-      status
+      dry_run_status,
+      execution_status,
+      created_at,
+      updated_at
     )
-    VALUES ($1, $2, $3, $4, 'uploaded')
+    VALUES (
+      $1, $2, $3, $4, $5,
+      'pending',
+      'pending',
+      NOW(),
+      NOW()
+    )
     `,
-    [migration_id, file_type, file_name, file_path]
+    [
+      migration_id,
+      migration_type,
+      file_type,
+      file_name,
+      file_path
+    ]
   );
 
   await client.query("COMMIT");
 }
 
-/**
- * Get all active (uploaded) files for a migration
- * - Returns array of { file_type, file_name, file_path, status }
- */
 export async function getMigrationFiles(migrationId) {
   if (!migrationId) {
     throw new Error("getMigrationFiles: migrationId is required");
@@ -62,53 +66,49 @@ export async function getMigrationFiles(migrationId) {
   const res = await client.query(
     `
     SELECT
+      id,
+      migration_id,
+      migration_type,
       file_type,
       file_name,
       file_path,
-      status,
-      created_at
+      dry_run_status,
+      execution_status,
+      dry_run_report_path,
+      created_at,
+      updated_at
     FROM migration_files
     WHERE migration_id = $1
-      AND status = 'uploaded'
     ORDER BY created_at ASC
     `,
     [migrationId]
   );
 
-  return res.rows; // [] if none
+  return res.rows;
 }
 
-/**
- * Update status of a migration file
- * Used after dry-run per file
- *
- * status allowed:
- * - uploaded
- * - dry_run_failed
- * - ready_for_execution
- * - replaced
- */
 export async function updateMigrationFileStatus({
   migration_id,
   file_type,
-  status
+  dry_run_status,
+  dry_run_report_path = null
 }) {
-  if (!migration_id || !file_type || !status) {
+  if (!migration_id || !file_type || !dry_run_status) {
     throw new Error(
-      "updateMigrationFileStatus: migration_id, file_type and status are required"
+      "updateMigrationFileStatus: migration_id, file_type, dry_run_status required"
     );
   }
 
   const ALLOWED_STATUS = [
-    "uploaded",
-    "dry_run_failed",
-    "ready_for_execution",
-    "replaced"
+    "pending",
+    "running",
+    "failed",
+    "passed"
   ];
 
-  if (!ALLOWED_STATUS.includes(status)) {
+  if (!ALLOWED_STATUS.includes(dry_run_status)) {
     throw new Error(
-      `updateMigrationFileStatus: invalid status "${status}"`
+      `Invalid dry_run_status: ${dry_run_status}`
     );
   }
 
@@ -117,17 +117,25 @@ export async function updateMigrationFileStatus({
   const res = await client.query(
     `
     UPDATE migration_files
-    SET status = $1
-    WHERE migration_id = $2
-      AND file_type = $3
+    SET
+      dry_run_status = $1,
+      dry_run_report_path = COALESCE($2, dry_run_report_path),
+      updated_at = NOW()
+    WHERE migration_id = $3
+      AND file_type = $4
     RETURNING *
     `,
-    [status, migration_id, file_type]
+    [
+      dry_run_status,
+      dry_run_report_path,
+      migration_id,
+      file_type
+    ]
   );
 
   if (res.rowCount === 0) {
     throw new Error(
-      `updateMigrationFileStatus: file not found for type "${file_type}"`
+      `No migration file found for ${file_type}`
     );
   }
 

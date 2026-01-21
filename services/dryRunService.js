@@ -3,10 +3,7 @@ import path from "path";
 
 import { parseFileFromPath } from "../utils/fileParserFromPath.util.js";
 import { updateMigration } from "./migration.service.js";
-import {
-  getMigrationFiles,
-  updateMigrationFileStatus
-} from "./migrationFiles.service.js";
+import { getMigrationFiles, updateMigrationFileStatus } from "./migrationFiles.service.js";
 
 import { createDryRunCsvWriter } from "../utils/dryRunCsvWriter.util.js";
 
@@ -63,7 +60,7 @@ export async function runDryRun(migration) {
 
     const reportPath = path.join(
       dryRunDir,
-      `${file_type}_dry_run.csv`
+      `${file_type}_report_dry_run.csv`
     );
 
     const writer = createDryRunCsvWriter(reportPath);
@@ -93,7 +90,7 @@ export async function runDryRun(migration) {
         errors = await validatePaypalRow(row, index, seen);
       }
 
-      else if (file_type === "braintree_payment_csv") {
+      else if (file_type === "payment_braintree_csv") {
         errors = await validateBraintreeRow(row, index, seen);
       }
 
@@ -122,10 +119,10 @@ export async function runDryRun(migration) {
     await updateMigrationFileStatus({
       migration_id: migrationId,
       file_type,
-      status: fileHasErrors
-        ? "dry_run_failed"
-        : "ready_for_execution"
+      dry_run_status: fileHasErrors ? "failed" : "passed",
+      dry_run_report_path: reportPath
     });
+
   }
 
   /* =====================================
@@ -133,7 +130,8 @@ export async function runDryRun(migration) {
   ===================================== */
   await updateMigration(migrationId, {
     status: migrationHasErrors
-      ? "dry_run_failed"
-      : "ready_for_execution"
+      ? "completed_with_errors"
+      : "completed"
   });
+  console.log(`Dry run completed for migration ID: ${migrationId} with status: ${migrationHasErrors ? "completed_with_errors" : "completed"}`);
 }
