@@ -1,7 +1,11 @@
 import fs from "fs";
 import { parse } from "csv-parse";
 
-export async function parseFileFromPath(filePath, onRow) {
+export async function parseFileFromPath(filePath, onRow, options = {}) {
+  const {
+    skipSecondRow = false   // 🔥 subscription = true, payment = false
+  } = options;
+
   const parser = parse({ trim: true });
   const stream = fs.createReadStream(filePath).pipe(parser);
 
@@ -12,17 +16,17 @@ export async function parseFileFromPath(filePath, onRow) {
   for await (const record of stream) {
     rowIndex++;
 
-    // Header row
+    // HEADER
     if (rowIndex === 1) {
-      headers = record.filter(
-        h => h !== "Columns in red are mandatory"
-      );
+      headers = record;
       record.forEach((h, i) => (headerIndexMap[h] = i));
       continue;
     }
 
-    // Skip instruction row
-    if (rowIndex === 2) continue;
+    // OPTIONAL instruction row (subscription only)
+    if (rowIndex === 2 && skipSecondRow) {
+      continue;
+    }
 
     const obj = {};
     headers.forEach(h => {

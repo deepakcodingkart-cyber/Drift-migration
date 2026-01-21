@@ -30,39 +30,6 @@ export async function createMigration({
 }
 
 /* ================================
-   UPDATE MIGRATION
-================================ */
-export async function updateMigration(migrationId, updates) {
-  if (!migrationId || !updates || Object.keys(updates).length === 0) {
-    throw new Error("updateMigration: invalid arguments");
-  }
-
-  const client = await getJobClient();
-
-  const fields = [];
-  const values = [];
-  let index = 1;
-
-  for (const key of Object.keys(updates)) {
-    fields.push(`${key} = $${index++}`);
-    values.push(updates[key]);
-  }
-
-  values.push(migrationId);
-
-  const query = `
-    UPDATE migrationsapp
-    SET ${fields.join(", ")},
-        updated_at = NOW()
-    WHERE id = $${index}
-    RETURNING *
-  `;
-
-  const result = await client.query(query, values);
-  return result.rows[0];
-}
-
-/* ================================
    GET MIGRATION BY ID
 ================================ */
 export async function getMigrationById(migration_id) {
@@ -79,3 +46,56 @@ export async function getMigrationById(migration_id) {
 
   return res.rows[0] || null;
 }
+
+/* ================================
+   UPDATE MIGRATION
+================================ */
+export async function updateMigration(migrationId, updates) {
+  if (!migrationId) {
+    throw new Error("updateMigration: migrationId is required");
+  }
+
+  if (!updates || Object.keys(updates).length === 0) {
+    throw new Error("updateMigration: updates are required");
+  }
+
+  // ✅ allow only safe columns
+  const ALLOWED_FIELDS = [
+    "status"
+  ];
+
+  const fields = [];
+  const values = [];
+  let index = 1;
+
+  for (const key of Object.keys(updates)) {
+    if (!ALLOWED_FIELDS.includes(key)) {
+      throw new Error(`updateMigration: invalid field "${key}"`);
+    }
+
+    fields.push(`${key} = $${index}`);
+    values.push(updates[key]);
+    index++;
+  }
+
+  values.push(migrationId);
+
+  const query = `
+    UPDATE migrations
+    SET ${fields.join(", ")},
+        updated_at = NOW()
+    WHERE id = $${index}
+    RETURNING *
+  `;
+
+  const client = await getJobClient();
+  const result = await client.query(query, values);
+
+  if (result.rowCount === 0) {
+    throw new Error("updateMigration: migration not found");
+  }
+
+  return result.rows[0];
+}
+
+
