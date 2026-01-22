@@ -1,4 +1,5 @@
 import { createMigration, getMigrationById, updateMigration } from "../services/migration.service.js";
+import { getMigrationFiles } from "../services/migrationFiles.service.js";
 import { runDryRun } from "../services/dryRunService.js";
 
 /**
@@ -54,9 +55,21 @@ export async function dryRunController(req, res) {
     // 🚀 run dry run (async-safe, streaming)
     await runDryRun(migration);
 
+      const files = await getMigrationFiles(migration.id);
+
+    const hasErrors = files.some(
+      f => f.dry_run_status === "failed"
+    );
+
     return res.json({
       success: true,
-      message: "Dry run completed successfully"
+      migration_id: migration.id,
+      status: hasErrors ? "dry_run_failed" : "ready_for_execution",
+      files: files.map(f => ({
+        file_type: f.file_type,
+        dry_run_status: f.dry_run_status,
+        dry_run_report_path: f.dry_run_report_path
+      }))
     });
 
   } catch (err) {

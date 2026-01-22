@@ -28,12 +28,15 @@ export async function runDryRun(migration) {
   /* =====================================
      1️⃣ LOAD FILES
   ===================================== */
-  const files = await getMigrationFiles(migrationId);
+  const files = await getMigrationFiles(migrationId, {
+    dry_run_status: "pending"
+  });
   console.log("Files for dry run:", files, "Migration ID:", migrationId);
 
 
   if (!files || files.length === 0) {
-    throw new Error("No files found for dry run");
+    console.log("No pending files for dry run");
+    return;
   }
 
   const dryRunDir = path.join(

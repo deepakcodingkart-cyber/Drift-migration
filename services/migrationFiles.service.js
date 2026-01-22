@@ -56,15 +56,48 @@ export async function upsertMigrationFile({
   await client.query("COMMIT");
 }
 
-export async function getMigrationFiles(migrationId) {
+// export async function getMigrationFiles(migrationId) {
+//   if (!migrationId) {
+//     throw new Error("getMigrationFiles: migrationId is required");
+//   }
+
+//   const client = await getJobClient();
+
+//   const res = await client.query(
+//     `
+//     SELECT
+//       id,
+//       migration_id,
+//       migration_type,
+//       file_type,
+//       file_name,
+//       file_path,
+//       dry_run_status,
+//       execution_status,
+//       dry_run_report_path,
+//       created_at,
+//       updated_at
+//     FROM migration_files
+//     WHERE migration_id = $1
+//     ORDER BY created_at ASC
+//     `,
+//     [migrationId]
+//   );
+
+//   return res.rows;
+// }
+
+export async function getMigrationFiles(
+  migrationId,
+  { dry_run_status } = {}
+) {
   if (!migrationId) {
     throw new Error("getMigrationFiles: migrationId is required");
   }
 
   const client = await getJobClient();
 
-  const res = await client.query(
-    `
+  let query = `
     SELECT
       id,
       migration_id,
@@ -79,11 +112,18 @@ export async function getMigrationFiles(migrationId) {
       updated_at
     FROM migration_files
     WHERE migration_id = $1
-    ORDER BY created_at ASC
-    `,
-    [migrationId]
-  );
+  `;
 
+  const values = [migrationId];
+
+  if (dry_run_status) {
+    query += ` AND dry_run_status = $2`;
+    values.push(dry_run_status);
+  }
+
+  query += ` ORDER BY created_at ASC`;
+
+  const res = await client.query(query, values);
   return res.rows;
 }
 
