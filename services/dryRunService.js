@@ -3,7 +3,10 @@ import path from "path";
 
 import { parseFileFromPath } from "../utils/fileParserFromPath.util.js";
 import { updateMigration } from "./migration.service.js";
-import { getMigrationFiles, updateMigrationFileStatus } from "./migrationFiles.service.js";
+import {
+  getMigrationFiles,
+  updateMigrationFileStatus
+} from "./migrationFiles.service.js";
 
 import { createDryRunCsvWriter } from "../utils/dryRunCsvWriter.util.js";
 
@@ -15,26 +18,33 @@ import { validatePaypalRow } from "../validators/payment/paypal.validator.js";
 import { validateBraintreeRow } from "../validators/payment/braintree.validator.js";
 
 /**
- * DRY RUN SERVICE
- * - Reads ALL uploaded CSVs for a migration
- * - Runs validation per file_type
- * - Generates dry-run CSV per file
- * - Updates migration_files + migrations status
+ * DRY RUN SERVICE (FINAL – CONSISTENT ERROR SHAPE)
+ *
+ * PASS 1 → Collect payment emails from ALL payment files
+ * PASS 2 → Validate ONLY pending files + generate dry-run CSV
  */
 export async function runDryRun(migration) {
-  console.log("Starting dry run for migration ID:", migration.id);
+  console.log("🚀 Starting dry run for migration:", migration.id);
   const migrationId = migration.id;
 
   /* =====================================
-     1️⃣ LOAD FILES
+     1️⃣ LOAD ALL FILES
   ===================================== */
-  const files = await getMigrationFiles(migrationId, {
-    dry_run_status: "pending"
-  });
-  console.log("Files for dry run:", files, "Migration ID:", migrationId);
+  const allFiles = await getMigrationFiles(migrationId);
 
+  if (!allFiles || allFiles.length === 0) {
+    console.log("No files found for migration");
+    return;
+  }
 
-  if (!files || files.length === 0) {
+  /* =====================================
+     2️⃣ FILTER PENDING FILES
+  ===================================== */
+  const pendingFiles = allFiles.filter(
+    f => f.dry_run_status === "pending"
+  );
+
+  if (pendingFiles.length === 0) {
     console.log("No pending files for dry run");
     return;
   }
@@ -45,15 +55,34 @@ export async function runDryRun(migration) {
     String(migrationId),
     "dry_run"
   );
-
   fs.mkdirSync(dryRunDir, { recursive: true });
 
   let migrationHasErrors = false;
 
-  /* =====================================
-     2️⃣ PROCESS EACH FILE
-  ===================================== */
-  for (const file of files) {
+  /* =====================================================
+     🔁 PASS 1 — COLLECT PAYMENT EMAILS (ALL FILES)
+  ===================================================== */
+  const paymentEmailSet = new Set();
+
+  for (const file of allFiles) {
+    const { file_type, file_path } = file;
+
+    if (
+      file_type === "stripe_payment_csv" ||
+      file_type === "paypal_payment_csv" ||
+      file_type === "payment_braintree_csv"
+    ) {
+      await parseFileFromPath(file_path, async (row) => {
+        const email = row.Email?.toLowerCase().trim();
+        if (email) paymentEmailSet.add(email);
+      });
+    }
+  }
+
+  /* =====================================================
+     🔁 PASS 2 — VALIDATE + DRY RUN CSV
+  ===================================================== */
+  for (const file of pendingFiles) {
     const { file_type, file_path } = file;
     console.log(`Processing file type: ${file_type}, path: ${file_path}`);
 
@@ -71,48 +100,72 @@ export async function runDryRun(migration) {
     const skipSecondRow = file_type === "subscription_csv";
     console.log(`Dry run report will be written to: ${reportPath}`);
 
-    await parseFileFromPath(file_path, async (row) => {
-      const index = rowIndex++;
-      let errors = [];
+    await parseFileFromPath(
+      file_path,
+      async (row) => {
+        const index = rowIndex++;
+        let errors = [];
 
-      /* ---------- ROUTE VALIDATION ---------- */
+        /* ---------- ROUTE VALIDATION ---------- */
 
-      if (file_type === "subscription_csv") {
-        const localErrors = await validateSubscriptionRow(row, index);
-        const shopifyErrors = await shopifyValidation(row, index);
-        errors = [...localErrors, ...shopifyErrors];
-        console.log(`subscription validation errors:`, errors);
-      }
+        // 🔹 SUBSCRIPTION CSV
+        if (file_type === "subscription_csv") {
+          const localErrors = await validateSubscriptionRow(row, index);
+          const shopifyErrors = await shopifyValidation(row, index);
+          errors = [...localErrors, ...shopifyErrors];
 
-      else if (file_type === "stripe_payment_csv") {
-        errors = await validateStripeRow(row, index, seen);
+          const subscriptionEmail =
+            row["Customer email"]?.toLowerCase().trim();
 
-      }
+          if (
+            subscriptionEmail &&
+            paymentEmailSet.size > 0 &&
+            !paymentEmailSet.has(subscriptionEmail)
+          ) {
+            errors.push({
+              row: index + 1,
+              field: "Customer email",
+              code: "PAYMENT_NOT_FOUND",
+              message:
+                "No payment found for this customer email in uploaded payment files"
+            });
+          }
+        }
 
-      else if (file_type === "paypal_payment_csv") {
-        errors = await validatePaypalRow(row, index, seen);
-      }
+        // 🔹 STRIPE PAYMENT CSV
+        else if (file_type === "stripe_payment_csv") {
+          errors = await validateStripeRow(row, index, seen);
+        }
 
-      else if (file_type === "payment_braintree_csv") {
-        errors = await validateBraintreeRow(row, index, seen);
-      }
+        // 🔹 PAYPAL PAYMENT CSV
+        else if (file_type === "paypal_payment_csv") {
+          errors = await validatePaypalRow(row, index, seen);
+        }
 
-      else {
-        errors.push({
-          row: index + 1,
-          field: "file_type",
-          message: `Unsupported file type: ${file_type}`
-        });
-      }
+        // 🔹 BRAINTREE PAYMENT CSV
+        else if (file_type === "payment_braintree_csv") {
+          errors = await validateBraintreeRow(row, index, seen);
+        }
 
-      if (errors.length > 0) {
-        fileHasErrors = true;
-        migrationHasErrors = true;
-      }
+        // 🔹 UNSUPPORTED FILE
+        else {
+          errors.push({
+            row: index + 1,
+            field: "file_type",
+            code: "UNSUPPORTED_FILE_TYPE",
+            message: `Unsupported file type: ${file_type}`
+          });
+        }
 
-      writer.writeRow(row, errors);
-    },
-      { skipSecondRow });
+        if (errors.length > 0) {
+          fileHasErrors = true;
+          migrationHasErrors = true;
+        }
+
+        writer.writeRow(row, errors);
+      },
+      { skipSecondRow }
+    );
 
     writer.end();
 
@@ -136,5 +189,10 @@ export async function runDryRun(migration) {
       ? "completed_with_errors"
       : "completed"
   });
-  console.log(`Dry run completed for migration ID: ${migrationId} with status: ${migrationHasErrors ? "completed_with_errors" : "completed"}`);
+
+  console.log(
+    `✅ Dry run completed for migration ${migrationId} | status: ${
+      migrationHasErrors ? "completed_with_errors" : "completed"
+    }`
+  );
 }
