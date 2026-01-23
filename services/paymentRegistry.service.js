@@ -1,0 +1,68 @@
+import { getJobClient } from "../db/jobClient.js";
+
+export async function getPaymentRegistry({
+  migration_id,
+  provider,
+  external_payment_id
+}) {
+  const client = await getJobClient();
+
+  const res = await client.query(
+    `
+    SELECT *
+    FROM migration_payment_registry
+    WHERE migration_id = $1
+      AND provider = $2
+      AND external_payment_id = $3
+    `,
+    [migration_id, provider, external_payment_id]
+  );
+
+  return res.rows[0] || null;
+}
+
+export async function upsertPaymentRegistry({
+  migration_id,
+  provider,
+  email,
+  shopify_customer_id = null,
+  external_payment_id,
+  shopify_payment_method_id = null,
+  status,
+  error_message = null
+}) {
+  const client = await getJobClient();
+
+  await client.query(
+    `
+    INSERT INTO migration_payment_registry (
+      migration_id,
+      provider,
+      email,
+      shopify_customer_id,
+      external_payment_id,
+      shopify_payment_method_id,
+      status,
+      error_message,
+      created_at
+    )
+    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,now())
+    ON CONFLICT (migration_id, provider, external_payment_id)
+    DO UPDATE SET
+      shopify_customer_id = EXCLUDED.shopify_customer_id,
+      shopify_payment_method_id = EXCLUDED.shopify_payment_method_id,
+      status = EXCLUDED.status,
+      error_message = EXCLUDED.error_message
+    `,
+    [
+      migration_id,
+      provider,
+      email,
+      shopify_customer_id,
+      external_payment_id,
+      shopify_payment_method_id,
+      status,
+      error_message
+    ]
+  );
+}

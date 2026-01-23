@@ -181,3 +181,59 @@ export async function updateMigrationFileStatus({
 
   return res.rows[0];
 }
+
+/**
+ * 🔥 Updates execution status of a SINGLE migration file
+ *
+ * execution_status:
+ * - pending   (default)
+ * - completed (all rows success)
+ * - partial   (some success, some failed)
+ * - failed    (all rows failed)
+ *
+ * IMPORTANT:
+ * - This is FILE-LEVEL summary
+ * - Row-level state is stored elsewhere
+ */
+export async function updateMigrationFileExecutionStatus({
+  migration_id,
+  file_type,
+  execution_status
+}) {
+  if (!migration_id || !file_type || !execution_status) {
+    throw new Error(
+      "updateMigrationFileExecutionStatus: migration_id, file_type and execution_status are required"
+    );
+  }
+
+  const ALLOWED_STATUS = ["pending", "completed", "partial", "failed"];
+
+  if (!ALLOWED_STATUS.includes(execution_status)) {
+    throw new Error(
+      `Invalid execution_status: ${execution_status}`
+    );
+  }
+
+  const client = await getJobClient();
+
+  const res = await client.query(
+    `
+    UPDATE migration_files
+    SET
+      execution_status = $1,
+      updated_at = NOW()
+    WHERE migration_id = $2
+      AND file_type = $3
+    RETURNING *
+    `,
+    [execution_status, migration_id, file_type]
+  );
+
+  if (res.rowCount === 0) {
+    throw new Error(
+      `No migration file found for migration_id=${migration_id}, file_type=${file_type}`
+    );
+  }
+
+  return res.rows[0];
+}
