@@ -2,41 +2,52 @@ import { shopifyQuery } from "../../shopify/graphql.js";
 
 /**
  * Create Shopify Subscription (PAUSED)
- * - Shopify API ke ALL required fields included
- * - ONLY minCycles / maxCycles optional
+ * - CSV based input mapping
  */
 export async function createSubscription({
   customerId,
   paymentMethodId,
   row
 }) {
+  console.log("Creating subscription...");
+  console.log("customerId:", customerId);
+  console.log("paymentMethodId:", paymentMethodId);
+  console.log("row:", row);
+
   if (!customerId) throw new Error("customerId is required");
   if (!paymentMethodId) throw new Error("paymentMethodId is required");
 
-  // REQUIRED CSV FIELDS (as per Shopify API usage)
-  if (!row.VariantId) throw new Error("VariantId is required");
-  if (!row.Quantity) throw new Error("Quantity is required");
-  if (!row.Price) throw new Error("Price is required");
-  if (!row.Currency) throw new Error("Currency is required");
-  if (!row.NextBillingDate) throw new Error("NextBillingDate is required");
+  /* ===============================
+     REQUIRED CSV FIELDS
+  =============================== */
+  if (!row["Variant ID"]) throw new Error("Variant ID is required");
+  if (!row["Variant quantity"]) throw new Error("Variant quantity is required");
+  if (!row["Variant price"]) throw new Error("Variant price is required");
+  if (!row["Currency Code"]) throw new Error("Currency Code is required");
+  if (!row["Next order date"]) throw new Error("Next order date is required");
 
-  if (!row.BillingInterval || !row.BillingIntervalCount) {
+  if (!row["Billing interval type"] || !row["Billing interval count"]) {
     throw new Error("Billing interval info required");
   }
 
-  if (!row.DeliveryInterval || !row.DeliveryIntervalCount) {
+  if (!row["Delivery interval type"] || !row["Delivery interval count"]) {
     throw new Error("Delivery interval info required");
   }
 
-  // ADDRESS (REQUIRED)
+  /* ===============================
+     ADDRESS (DELIVERY)
+  =============================== */
   const address = {
-    firstName: row.FirstName,
-    lastName: row.LastName,
-    address1: row.Address1,
-    city: row.City,
-    province: row.Province,
-    country: row.Country,
-    zip: row.Zip
+    firstName: row["Delivery first name"],
+    lastName: row["Delivery last name"],
+    address1: row["Delivery address 1"],
+    city: row["Delivery city"],
+    province: row["Delivery province code"],
+    country: row["Delivery country code"],
+    zip: row["Delivery zip"],
+  };
+  const localDeliveryOption = {
+    phone: row["Delivery phone"]
   };
 
   for (const [key, val] of Object.entries(address)) {
@@ -47,35 +58,26 @@ export async function createSubscription({
 
   /* ===============================
      BILLING POLICY
-     (ONLY min/max optional)
   =============================== */
   const billingPolicy = {
-    interval: row.BillingInterval,              // MONTH
-    intervalCount: Number(row.BillingIntervalCount)
+    interval: row["Billing interval type"].toUpperCase(), // WEEK / MONTH
+    intervalCount: Number(row["Billing interval count"])
   };
 
-  if (row.MinCycles) {
-    billingPolicy.minCycles = Number(row.MinCycles);
-  }
-
-  if (row.MaxCycles) {
-    billingPolicy.maxCycles = Number(row.MaxCycles);
-  }
-
   /* ===============================
-     SUBSCRIPTION INPUT (FULL)
+     SUBSCRIPTION INPUT
   =============================== */
   const input = {
     customerId,
-    nextBillingDate: row.NextBillingDate,
-    currencyCode: row.Currency,
+    nextBillingDate: row["Next order date"],
+    currencyCode: row["Currency Code"],
 
     lines: [
       {
         line: {
-          productVariantId: row.VariantId,
-          quantity: Number(row.Quantity),
-          currentPrice: Number(row.Price)
+          productVariantId: `gid://shopify/ProductVariant/${row["Variant ID"]}`,
+          quantity: Number(row["Variant quantity"]),
+          currentPrice: Number(row["Variant price"])
         }
       }
     ],
@@ -87,19 +89,21 @@ export async function createSubscription({
       billingPolicy,
 
       deliveryPolicy: {
-        interval: row.DeliveryInterval,
-        intervalCount: Number(row.DeliveryIntervalCount)
+        interval: row["Delivery interval type"].toUpperCase(),
+        intervalCount: Number(row["Delivery interval count"])
       },
 
-      deliveryPrice: Number(row.DeliveryPrice),
+      deliveryPrice: Number(row["Shipping Price"] || 0),
 
       deliveryMethod: {
-        shipping: {
-          address
+        localDelivery: {
+          address,
+          localDeliveryOption
         }
       }
     }
   };
+  console.log("Shopify Input:", JSON.stringify(input, null, 2));
 
   /* ===============================
      GRAPHQL MUTATION
@@ -121,22 +125,20 @@ export async function createSubscription({
   `;
 
   const res = await shopifyQuery(mutation, { input });
+  console.log("Shopify Response:", JSON.stringify(res, null, 2));
 
   const result = res?.subscriptionContractAtomicCreate;
 
-  if (!result) {
-    throw new Error("Empty Shopify response");
-  }
+  if (!result) throw new Error("Empty Shopify response");
 
   if (result.userErrors?.length) {
-    throw new Error(
-      result.userErrors.map(e => e.message).join("; ")
-    );
+    throw new Error(result.userErrors.map(e => e.message).join("; "));
   }
 
   if (!result.contract?.id) {
     throw new Error("Subscription ID missing");
   }
 
+  console.log("✅ Subscription created:", result.contract.id);
   return result.contract.id;
 }

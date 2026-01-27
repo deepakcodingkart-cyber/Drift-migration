@@ -17,8 +17,10 @@ const SUBSCRIPTION_FILE_TYPE = "subscription_csv";
 
 export async function executeSubscriptions(migration) {
   const migrationId = migration.id;
+  console.log("Executing subscriptions for migration:", migrationId);
 
   const files = await getMigrationFiles(migrationId);
+  console.log("Files:", files);
 
   const subscriptionFiles = files.filter(
     f =>
@@ -26,24 +28,32 @@ export async function executeSubscriptions(migration) {
       f.dry_run_status === "passed" &&
       (f.execution_status === "pending" || f.execution_status === "failed")
   );
+  console.log("Subscription files:", subscriptionFiles);
 
   for (const file of subscriptionFiles) {
     let successCount = 0;
     let failureCount = 0;
 
-    await parseFileFromPath(file.file_path, async (row) => {
-      try {
-        await executeSubscriptionRow({
-          migration_id: migrationId,
-          row
-        });
-        successCount++;
-      } catch (err) {
-        // should be rare (system error)
-        console.error("Subscription row fatal error:", err.message);
-        failureCount++;
+    await parseFileFromPath(
+      file.file_path,
+      async (row) => {
+        try {
+          await executeSubscriptionRow({
+            migration_id: migrationId,
+            row
+          });
+          successCount++;
+          console.log("Success count:", successCount);
+        } catch (err) {
+          failureCount++;
+          console.log("Failure count:", failureCount);
+        }
+      },
+      {
+        skipSecondRow: true   // 🔥 THIS IS WHY ISSUE FIX HOGA
       }
-    });
+    );
+
 
     let execution_status = "completed";
     if (failureCount > 0 && successCount > 0) {
@@ -51,6 +61,7 @@ export async function executeSubscriptions(migration) {
     } else if (failureCount > 0 && successCount === 0) {
       execution_status = "failed";
     }
+    console.log("Execution status:", execution_status);
 
     await updateMigrationFileExecutionStatus({
       migration_id: migrationId,
@@ -64,16 +75,17 @@ export async function executeSubscriptions(migration) {
  * Execute a single subscription row
  */
 async function executeSubscriptionRow({ migration_id, row }) {
-  if (!row.Email) {
+  console.log("Executing subscription row:", row);
+  if (!row["Customer email"]) {
     throw new Error("Email is required");
   }
 
-  if (!row.External_Subscription_ID) {
-    throw new Error("External_Subscription_ID is required");
+  if (!row["External_Subscription_ID"]) {
+    throw new Error("External Subscription ID is required");
   }
 
-  const email = row.Email.toLowerCase().trim();
-  const external_subscription_id = row.External_Subscription_ID;
+  const email = row["Customer email"].toLowerCase().trim();
+  const external_subscription_id = row["External_Subscription_ID"];
 
   /* =====================================================
      1️⃣ IDEMPOTENCY CHECK
@@ -82,8 +94,10 @@ async function executeSubscriptionRow({ migration_id, row }) {
     migration_id,
     external_subscription_id
   });
+  console.log("Existing subscription:", existing);
 
   if (existing && existing.status === "created") {
+    console.log("Subscription already created");
     return; // already created
   }
 
@@ -94,8 +108,10 @@ async function executeSubscriptionRow({ migration_id, row }) {
     migration_id,
     email
   });
+  console.log("Payment:", payment);
 
   if (!payment || payment.status !== "success") {
+    console.log("Payment failed or missing");
     await upsertSubscriptionRegistry({
       migration_id,
       external_subscription_id,
@@ -109,6 +125,7 @@ async function executeSubscriptionRow({ migration_id, row }) {
   const paymentMethodId = payment.shopify_payment_method_id;
 
   if (!shopifyCustomerId || !paymentMethodId) {
+    console.log("Missing Shopify customer or payment method");
     await upsertSubscriptionRegistry({
       migration_id,
       external_subscription_id,
@@ -122,11 +139,13 @@ async function executeSubscriptionRow({ migration_id, row }) {
      3️⃣ CREATE SHOPIFY SUBSCRIPTION
   ===================================================== */
   try {
+    console.log("Creating subscription...");
     const shopifySubscriptionId = await createSubscription({
       customerId: shopifyCustomerId,
       paymentMethodId,
       row
     });
+    console.log("Subscription created:", shopifySubscriptionId);
 
     await upsertSubscriptionRegistry({
       migration_id,

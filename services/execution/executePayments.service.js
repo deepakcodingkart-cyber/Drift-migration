@@ -17,6 +17,7 @@ const PAYMENT_FILE_TYPES = [
 
 export async function executePayments(migration) {
   const migrationId = migration.id;
+  console.log("migrationId", migrationId);
 
   const files = await getMigrationFiles(migrationId);
   console.log("files", files);
@@ -48,6 +49,8 @@ export async function executePayments(migration) {
         console.log("failureCount", failureCount);
       }
     });
+    console.log("successCount", successCount);
+    console.log("failureCount", failureCount);
 
     let execution_status = "completed";
     if (failureCount > 0 && successCount > 0) {
@@ -89,6 +92,7 @@ async function executePaymentRow({ migration_id, file_type, row }) {
   }
 
   const shopifyCustomerId = await resolveShopifyCustomerByEmail(email);
+  console.log("shopifyCustomerId", shopifyCustomerId);
 
   if (!shopifyCustomerId) {
     await upsertPaymentRegistry({
@@ -108,6 +112,7 @@ async function executePaymentRow({ migration_id, file_type, row }) {
     provider,
     external_payment_id
   });
+  console.log("existing", existing);
 
   if (existing && existing.status === "success") {
     return; // already executed
@@ -119,6 +124,7 @@ async function executePaymentRow({ migration_id, file_type, row }) {
         shopifyCustomerId,
         remoteReference
       );
+    console.log("shopifyPaymentMethodId", shopifyPaymentMethodId);
 
     await upsertPaymentRegistry({
       migration_id,

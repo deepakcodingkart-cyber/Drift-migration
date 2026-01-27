@@ -14,9 +14,9 @@ const MAX_CHUNK_SIZE = 5 * 1024 * 1024; // 5MB
 // 🔒 locked filenames (canonical)
 const FILE_NAME_MAP = {
   subscription_csv: "subscription.csv",
-  payment_stripe_csv: "payment_stripe.csv",
-  payment_paypal_csv: "payment_paypal.csv",
-  payment_braintree_csv: "payment_braintree.csv",
+  stripe_payment_csv: "stripe_payment.csv",
+  paypal_payment_csv: "paypal_payment.csv",
+  braintree_payment_csv: "braintree_payment.csv",
   attribute_csv: "attribute.csv"
 };
 
@@ -40,6 +40,7 @@ export async function uploadChunkController(req, res) {
     } = req.body;
 
     const migration_type = req.body?.migration_type || 'data';
+    console.log("Migration type:", migration_type);
 
     /* ---------- VALIDATION ---------- */
     if (!migration_id || !migration_type || !file_type) {

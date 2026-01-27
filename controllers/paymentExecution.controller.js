@@ -11,8 +11,10 @@ export async function executePaymentsController(req, res) {
         message: "migration_id is required"
       });
     }
+    console.log("migration_id:", migration_id);
 
     const migration = await getMigrationById(migration_id);
+    console.log("migration:", migration);
 
     if (!migration) {
       return res.status(404).json({
@@ -27,6 +29,7 @@ export async function executePaymentsController(req, res) {
         message: `Payment execution not allowed in status ${migration.status}`
       });
     }
+    console.log("migration.status:", migration.status);
 
     await executePayments(migration);
 

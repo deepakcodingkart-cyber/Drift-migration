@@ -9,6 +9,7 @@ import multer from "multer";
 import uploadRoutes from "./routes/uploadRoute.js";
 import migrationRoutes from "./routes/migrationRoute.js";
 import paymentExecutionRoutes from "./routes/paymentExecution.route.js";
+import subscriptionExecutionRoutes from "./routes/subscriptionExecution.route.js";
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -25,6 +26,7 @@ const upload = multer({
 app.use("/upload", uploadRoutes(upload));
 app.use("/migrations", migrationRoutes());
 app.use("/execute-payments", paymentExecutionRoutes());
+app.use("/execute-subscriptions", subscriptionExecutionRoutes());
 
 app.listen(PORT, () => {
   console.log(`✅ Migration Validation API running on ${PORT}`);

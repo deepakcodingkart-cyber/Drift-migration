@@ -6,6 +6,7 @@ import { shopifyQuery } from "../../shopify/graphql.js";
  * Returns Shopify Customer GID or null
  */
 export async function resolveShopifyCustomerByEmail(email) {
+  console.log("Resolving Shopify customer by email:", email);
   if (!email) {
     throw new Error("Email is required to resolve Shopify customer");
   }
