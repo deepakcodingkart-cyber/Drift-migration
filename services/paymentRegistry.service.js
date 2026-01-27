@@ -66,3 +66,44 @@ export async function upsertPaymentRegistry({
     ]
   );
 }
+
+export async function getPaymentRegistryByEmail({
+  migration_id,
+  email
+}) {
+  if (!migration_id || !email) {
+    throw new Error(
+      "getPaymentRegistryByEmail: migration_id and email are required"
+    );
+  }
+
+  const client = await getJobClient();
+
+  const res = await client.query(
+    `
+    SELECT
+      id,
+      migration_id,
+      provider,
+      email,
+      shopify_customer_id,
+      external_payment_id,
+      shopify_payment_method_id,
+      status,
+      error_message,
+      created_at
+    FROM migration_payment_registry
+    WHERE migration_id = $1
+      AND email = $2
+      AND status = 'success'
+    ORDER BY created_at DESC
+    LIMIT 1
+    `,
+    [
+      migration_id,
+      email.toLowerCase().trim()
+    ]
+  );
+
+  return res.rows[0] || null;
+}

@@ -9,6 +9,7 @@ const CUSTOMER_QUERY = `
 `;
 
 export async function checkCustomerExists(customerId) {
+  console.log("customer", customerId)
   
   const gid = customerId.startsWith("gid://")
     ? customerId

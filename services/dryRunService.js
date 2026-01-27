@@ -17,11 +17,15 @@ import { validateStripeRow } from "../validators/payment/stripe.validator.js";
 import { validatePaypalRow } from "../validators/payment/paypal.validator.js";
 import { validateBraintreeRow } from "../validators/payment/braintree.validator.js";
 
+import { resolveShopifyCustomerByEmail } from "./shopify/resolveShopifyCustomerByEmail.js";
 /**
- * DRY RUN SERVICE (FINAL – CONSISTENT ERROR SHAPE)
+ * DRY RUN SERVICE (FINAL)
  *
- * PASS 1 → Collect payment emails from ALL payment files
- * PASS 2 → Validate ONLY pending files + generate dry-run CSV
+ * RULES:
+ * - Shopify customer existence check → ONLY PAYMENT FILES
+ * - Subscription CSV → ONLY checks payment availability
+ * - No Shopify writes
+ * - Row-level error CSV
  */
 export async function runDryRun(migration) {
   console.log("🚀 Starting dry run for migration:", migration.id);
@@ -59,11 +63,15 @@ export async function runDryRun(migration) {
 
   let migrationHasErrors = false;
 
-  /* =====================================================
-     🔁 PASS 1 — COLLECT PAYMENT EMAILS (ALL FILES)
-  ===================================================== */
-  const paymentEmailSet = new Set();
+  /* =====================================
+     🔒 GLOBAL CACHE
+  ===================================== */
+  const paymentEmailSet = new Set();        // emails from payment CSVs
+  const shopifyCustomerCache = new Map();   // email -> customerId | null
 
+  /* =====================================
+     2️⃣ PASS 1 — COLLECT PAYMENT EMAILS
+  ===================================== */
   for (const file of allFiles) {
     const { file_type, file_path } = file;
 
@@ -79,9 +87,9 @@ export async function runDryRun(migration) {
     }
   }
 
-  /* =====================================================
-     🔁 PASS 2 — VALIDATE + DRY RUN CSV
-  ===================================================== */
+  /* =====================================
+     3️⃣ PASS 2 — VALIDATION + CSV
+  ===================================== */
   for (const file of pendingFiles) {
     const { file_type, file_path } = file;
     console.log(`Processing file type: ${file_type}, path: ${file_path}`);
@@ -114,13 +122,14 @@ export async function runDryRun(migration) {
           const shopifyErrors = await shopifyValidation(row, index);
           errors = [...localErrors, ...shopifyErrors];
 
-          const subscriptionEmail =
+          const email =
             row["Customer email"]?.toLowerCase().trim();
 
+          // 🔑 ONLY payment existence check
           if (
-            subscriptionEmail &&
+            email &&
             paymentEmailSet.size > 0 &&
-            !paymentEmailSet.has(subscriptionEmail)
+            !paymentEmailSet.has(email)
           ) {
             errors.push({
               row: index + 1,
@@ -132,22 +141,65 @@ export async function runDryRun(migration) {
           }
         }
 
-        // 🔹 STRIPE PAYMENT CSV
+        /* =====================================
+           STRIPE PAYMENT CSV
+        ===================================== */
         else if (file_type === "stripe_payment_csv") {
           errors = await validateStripeRow(row, index, seen);
+
+          await checkShopifyCustomer({
+            row,
+            index,
+            errors,
+            shopifyCustomerCache
+          });
         }
 
-        // 🔹 PAYPAL PAYMENT CSV
+        /* =====================================
+           PAYPAL PAYMENT CSV
+        ===================================== */
         else if (file_type === "paypal_payment_csv") {
           errors = await validatePaypalRow(row, index, seen);
+
+          await checkShopifyCustomer({
+            row,
+            index,
+            errors,
+            shopifyCustomerCache
+          });
         }
 
-        // 🔹 BRAINTREE PAYMENT CSV
+        /* =====================================
+           BRAINTREE PAYMENT CSV
+        ===================================== */
         else if (file_type === "payment_braintree_csv") {
           errors = await validateBraintreeRow(row, index, seen);
+
+          await checkShopifyCustomer({
+            row,
+            index,
+            errors,
+            shopifyCustomerCache
+          });
         }
 
-        // 🔹 UNSUPPORTED FILE
+        /* =====================================
+           AUTHORIZE.NET PAYMENT CSV
+        ===================================== */
+        else if (file_type === "authorizedotnet_payment_csv") {
+          errors = await validateAuthorizeNetRow(row, index, seen);
+
+          await checkShopifyCustomer({
+            row,
+            index,
+            errors,
+            shopifyCustomerCache
+          });
+        }
+
+        /* =====================================
+           UNSUPPORTED FILE
+        ===================================== */
         else {
           errors.push({
             row: index + 1,
@@ -169,20 +221,16 @@ export async function runDryRun(migration) {
 
     writer.end();
 
-    /* =====================================
-       3️⃣ UPDATE FILE STATUS
-    ===================================== */
     await updateMigrationFileStatus({
       migration_id: migrationId,
       file_type,
       dry_run_status: fileHasErrors ? "failed" : "passed",
       dry_run_report_path: reportPath
     });
-
   }
 
   /* =====================================
-     4️⃣ UPDATE MIGRATION STATUS
+     4️⃣ MIGRATION STATUS
   ===================================== */
   await updateMigration(migrationId, {
     status: migrationHasErrors
@@ -191,8 +239,36 @@ export async function runDryRun(migration) {
   });
 
   console.log(
-    `✅ Dry run completed for migration ${migrationId} | status: ${
+    `✅ Dry run completed | status: ${
       migrationHasErrors ? "completed_with_errors" : "completed"
     }`
   );
+}
+
+/* =====================================
+   🔥 COMMON SHOPIFY CHECK (PAYMENT ONLY)
+===================================== */
+async function checkShopifyCustomer({
+  row,
+  index,
+  errors,
+  shopifyCustomerCache
+}) {
+  const email = row.Email?.toLowerCase().trim();
+  if (!email) return;
+
+  if (!shopifyCustomerCache.has(email)) {
+    const customerId =
+      await resolveShopifyCustomerByEmail(email);
+    shopifyCustomerCache.set(email, customerId);
+  }
+
+  if (!shopifyCustomerCache.get(email)) {
+    errors.push({
+      row: index + 1,
+      field: "Email",
+      code: "SHOPIFY_CUSTOMER_NOT_FOUND",
+      message: "No Shopify customer exists with this email"
+    });
+  }
 }
