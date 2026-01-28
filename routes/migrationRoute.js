@@ -1,5 +1,6 @@
 import express from "express";
-import { createMigrationController, dryRunController } from "../controllers/dryRunController.js";
+import { createMigrationController, dryRunController, executePaymentsController, executeSubscriptionsController } from "../controllers/migrationController.js";
+
 
 const router = express.Router();
 
@@ -10,8 +11,10 @@ const router = express.Router();
  */
 
 export default function () {
-  router.post("/:migration_id/dry-run", dryRunController);
   router.post("/create", createMigrationController);
+  router.post("/:migration_id/dry-run", dryRunController);
+  router.post("/:migration_id/payment-execute", executePaymentsController); // Placeholder for execute controller
+  router.post("/:migration_id/subscription-execute", executeSubscriptionsController); // Placeholder for execute controller
 
   return router;
 }
