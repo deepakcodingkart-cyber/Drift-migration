@@ -107,3 +107,54 @@ export async function getPaymentRegistryByEmail({
 
   return res.rows[0] || null;
 }
+
+export async function getSuccessfulPaymentsByMigration({
+  migration_id
+}) {
+  const client = await getJobClient();
+
+  const res = await client.query(
+    `
+    SELECT
+      migration_id,
+      provider,
+      shopify_payment_method_id
+    FROM migration_payment_registry
+    WHERE migration_id = $1
+      AND status = 'success'
+      AND shopify_payment_method_id IS NOT NULL
+    `,
+    [migration_id]
+  );
+
+  return res.rows;
+}
+
+/**
+ * Update payment status after revoke
+ */
+export async function updatePaymentStatusByShopifyMethod({
+  migration_id,
+  shopify_payment_method_id,
+  status,
+  error_message = null
+}) {
+  const client = await getJobClient();
+
+  await client.query(
+    `
+    UPDATE migration_payment_registry
+    SET
+      status = $1,
+      error_message = $2
+    WHERE migration_id = $3
+      AND shopify_payment_method_id = $4
+    `,
+    [
+      status,
+      error_message,
+      migration_id,
+      shopify_payment_method_id
+    ]
+  );
+}
