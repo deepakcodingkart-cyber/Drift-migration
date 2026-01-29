@@ -1,30 +1,35 @@
-import { getJobClient } from "../db/jobClient.js";
+import sequelize from "../db/sequelize.js";
+import { QueryTypes } from "sequelize";
 
-/**
- * Get existing subscription by external_subscription_id
- */
+/* =========================================
+   GET EXISTING SUBSCRIPTION REGISTRY
+========================================= */
 export async function getSubscriptionRegistry({
   migration_id,
   external_subscription_id
 }) {
-  const client = await getJobClient();
-
-  const res = await client.query(
+  const rows = await sequelize.query(
     `
     SELECT *
     FROM migration_subscriptions
-    WHERE migration_id = $1
-      AND external_subscription_id = $2
+    WHERE migration_id = :migration_id
+      AND external_subscription_id = :external_subscription_id
     `,
-    [migration_id, external_subscription_id]
+    {
+      replacements: {
+        migration_id,
+        external_subscription_id
+      },
+      type: QueryTypes.SELECT
+    }
   );
 
-  return res.rows[0] || null;
+  return rows[0] || null;
 }
 
-/**
- * Insert / update subscription execution result
- */
+/* =========================================
+   UPSERT SUBSCRIPTION EXECUTION RESULT
+========================================= */
 export async function upsertSubscriptionRegistry({
   migration_id,
   external_subscription_id,
@@ -32,9 +37,7 @@ export async function upsertSubscriptionRegistry({
   status,
   error_message = null
 }) {
-  const client = await getJobClient();
-
-  await client.query(
+  await sequelize.query(
     `
     INSERT INTO migration_subscriptions (
       migration_id,
@@ -45,24 +48,38 @@ export async function upsertSubscriptionRegistry({
       created_at,
       updated_at
     )
-    VALUES ($1,$2,$3,$4,$5,now(),now())
+    VALUES (
+      :migration_id,
+      :external_subscription_id,
+      :shopify_subscription_id,
+      :status,
+      :error_message,
+      NOW(),
+      NOW()
+    )
     ON CONFLICT (migration_id, external_subscription_id)
     DO UPDATE SET
       shopify_subscription_id = EXCLUDED.shopify_subscription_id,
       status = EXCLUDED.status,
       error_message = EXCLUDED.error_message,
-      updated_at = now()
+      updated_at = NOW()
     `,
-    [
-      migration_id,
-      external_subscription_id,
-      shopify_subscription_id,
-      status,
-      error_message
-    ]
+    {
+      replacements: {
+        migration_id,
+        external_subscription_id,
+        shopify_subscription_id,
+        status,
+        error_message
+      },
+      type: QueryTypes.INSERT
+    }
   );
 }
 
+/* =========================================
+   GET SUBSCRIPTIONS BY STATUS (BATCH)
+========================================= */
 export async function getSubscriptionsByMigrationAndStatus({
   migration_id,
   statuses
@@ -73,9 +90,7 @@ export async function getSubscriptionsByMigrationAndStatus({
     );
   }
 
-  const client = await getJobClient();
-
-  const res = await client.query(
+  const rows = await sequelize.query(
     `
     SELECT
       migration_id,
@@ -83,22 +98,25 @@ export async function getSubscriptionsByMigrationAndStatus({
       shopify_subscription_id,
       status
     FROM migration_subscriptions
-    WHERE migration_id = $1
-      AND status = ANY($2)
+    WHERE migration_id = :migration_id
+      AND status = ANY(:statuses)
     ORDER BY created_at ASC
     `,
-    [
-      migration_id,
-      statuses
-    ]
+    {
+      replacements: {
+        migration_id,
+        statuses
+      },
+      type: QueryTypes.SELECT
+    }
   );
 
-  return res.rows;
+  return rows;
 }
 
-/**
- * Update subscription status (used in activation / pause / cancel)
- */
+/* =========================================
+   UPDATE SUBSCRIPTION STATUS
+========================================= */
 export async function updateSubscriptionStatus({
   migration_id,
   external_subscription_id,
@@ -111,23 +129,24 @@ export async function updateSubscriptionStatus({
     );
   }
 
-  const client = await getJobClient();
-
-  await client.query(
+  await sequelize.query(
     `
     UPDATE migration_subscriptions
     SET
-      status = $1,
-      error_message = $2,
-      updated_at = now()
-    WHERE migration_id = $3
-      AND external_subscription_id = $4
+      status = :status,
+      error_message = :error_message,
+      updated_at = NOW()
+    WHERE migration_id = :migration_id
+      AND external_subscription_id = :external_subscription_id
     `,
-    [
-      status,
-      error_message,
-      migration_id,
-      external_subscription_id
-    ]
+    {
+      replacements: {
+        status,
+        error_message,
+        migration_id,
+        external_subscription_id
+      },
+      type: QueryTypes.UPDATE
+    }
   );
 }

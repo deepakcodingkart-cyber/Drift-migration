@@ -1,26 +1,38 @@
-import { getJobClient } from "../db/jobClient.js";
+import sequelize from "../db/sequelize.js";
+import { QueryTypes } from "sequelize";
 
+/* =========================================
+   GET PAYMENT REGISTRY (BY UNIQUE KEY)
+========================================= */
 export async function getPaymentRegistry({
   migration_id,
   provider,
   external_payment_id
 }) {
-  const client = await getJobClient();
-
-  const res = await client.query(
+  const rows = await sequelize.query(
     `
     SELECT *
     FROM migration_payment_registry
-    WHERE migration_id = $1
-      AND provider = $2
-      AND external_payment_id = $3
+    WHERE migration_id = :migration_id
+      AND provider = :provider
+      AND external_payment_id = :external_payment_id
     `,
-    [migration_id, provider, external_payment_id]
+    {
+      replacements: {
+        migration_id,
+        provider,
+        external_payment_id
+      },
+      type: QueryTypes.SELECT
+    }
   );
 
-  return res.rows[0] || null;
+  return rows[0] || null;
 }
 
+/* =========================================
+   UPSERT PAYMENT REGISTRY
+========================================= */
 export async function upsertPaymentRegistry({
   migration_id,
   provider,
@@ -31,9 +43,7 @@ export async function upsertPaymentRegistry({
   status,
   error_message = null
 }) {
-  const client = await getJobClient();
-
-  await client.query(
+  await sequelize.query(
     `
     INSERT INTO migration_payment_registry (
       migration_id,
@@ -46,7 +56,17 @@ export async function upsertPaymentRegistry({
       error_message,
       created_at
     )
-    VALUES ($1,$2,$3,$4,$5,$6,$7,$8,now())
+    VALUES (
+      :migration_id,
+      :provider,
+      :email,
+      :shopify_customer_id,
+      :external_payment_id,
+      :shopify_payment_method_id,
+      :status,
+      :error_message,
+      NOW()
+    )
     ON CONFLICT (migration_id, provider, external_payment_id)
     DO UPDATE SET
       shopify_customer_id = EXCLUDED.shopify_customer_id,
@@ -54,19 +74,25 @@ export async function upsertPaymentRegistry({
       status = EXCLUDED.status,
       error_message = EXCLUDED.error_message
     `,
-    [
-      migration_id,
-      provider,
-      email,
-      shopify_customer_id,
-      external_payment_id,
-      shopify_payment_method_id,
-      status,
-      error_message
-    ]
+    {
+      replacements: {
+        migration_id,
+        provider,
+        email,
+        shopify_customer_id,
+        external_payment_id,
+        shopify_payment_method_id,
+        status,
+        error_message
+      },
+      type: QueryTypes.INSERT
+    }
   );
 }
 
+/* =========================================
+   GET PAYMENT REGISTRY BY EMAIL (SUCCESS)
+========================================= */
 export async function getPaymentRegistryByEmail({
   migration_id,
   email
@@ -77,9 +103,7 @@ export async function getPaymentRegistryByEmail({
     );
   }
 
-  const client = await getJobClient();
-
-  const res = await client.query(
+  const rows = await sequelize.query(
     `
     SELECT
       id,
@@ -93,68 +117,76 @@ export async function getPaymentRegistryByEmail({
       error_message,
       created_at
     FROM migration_payment_registry
-    WHERE migration_id = $1
-      AND email = $2
+    WHERE migration_id = :migration_id
+      AND email = :email
       AND status = 'success'
     ORDER BY created_at DESC
     LIMIT 1
     `,
-    [
-      migration_id,
-      email.toLowerCase().trim()
-    ]
+    {
+      replacements: {
+        migration_id,
+        email: email.toLowerCase().trim()
+      },
+      type: QueryTypes.SELECT
+    }
   );
 
-  return res.rows[0] || null;
+  return rows[0] || null;
 }
 
+/* =========================================
+   GET ALL SUCCESSFUL PAYMENTS (MIGRATION)
+========================================= */
 export async function getSuccessfulPaymentsByMigration({
   migration_id
 }) {
-  const client = await getJobClient();
-
-  const res = await client.query(
+  const rows = await sequelize.query(
     `
     SELECT
       migration_id,
       provider,
       shopify_payment_method_id
     FROM migration_payment_registry
-    WHERE migration_id = $1
+    WHERE migration_id = :migration_id
       AND status = 'success'
       AND shopify_payment_method_id IS NOT NULL
     `,
-    [migration_id]
+    {
+      replacements: { migration_id },
+      type: QueryTypes.SELECT
+    }
   );
 
-  return res.rows;
+  return rows;
 }
 
-/**
- * Update payment status after revoke
- */
+/* =========================================
+   UPDATE PAYMENT STATUS BY SHOPIFY METHOD
+========================================= */
 export async function updatePaymentStatusByShopifyMethod({
   migration_id,
   shopify_payment_method_id,
   status,
   error_message = null
 }) {
-  const client = await getJobClient();
-
-  await client.query(
+  await sequelize.query(
     `
     UPDATE migration_payment_registry
     SET
-      status = $1,
-      error_message = $2
-    WHERE migration_id = $3
-      AND shopify_payment_method_id = $4
+      status = :status,
+      error_message = :error_message
+    WHERE migration_id = :migration_id
+      AND shopify_payment_method_id = :shopify_payment_method_id
     `,
-    [
-      status,
-      error_message,
-      migration_id,
-      shopify_payment_method_id
-    ]
+    {
+      replacements: {
+        status,
+        error_message,
+        migration_id,
+        shopify_payment_method_id
+      },
+      type: QueryTypes.UPDATE
+    }
   );
 }

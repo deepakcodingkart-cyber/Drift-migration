@@ -1,12 +1,11 @@
 import pkg from "pg";
+const { Pool } = pkg;
 
-const { Client } = pkg;
+let pool;
 
-let client;
-
-export async function getJobClient() {
-  if (!client) {
-    client = new Client({
+export function getJobPool() {
+  if (!pool) {
+    pool = new Pool({
       host: process.env.DB_HOST,
       port: Number(process.env.DB_PORT),
       database: process.env.DB_NAME,
@@ -15,18 +14,18 @@ export async function getJobClient() {
       ssl:
         process.env.DB_SSL === "true"
           ? { rejectUnauthorized: false }
-          : false
+          : false,
+      max: 10,              // max connections
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 5000
     });
 
-    client.on("error", (err) => {
-      console.error("❌ PostgreSQL client error", err);
-      client = null; // reset so next call reconnects
+    pool.on("error", (err) => {
+      console.error("❌ PostgreSQL pool error", err);
     });
 
-
-    await client.connect();
-    console.log("✅ Connected to PostgreSQL");
+    console.log("✅ PostgreSQL Pool initialized");
   }
 
-  return client;
+  return pool;
 }

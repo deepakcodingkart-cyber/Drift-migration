@@ -1,4 +1,5 @@
-import { getJobClient } from "../db/jobClient.js";
+import sequelize from "../db/sequelize.js";
+import { QueryTypes } from "sequelize";
 
 /* =========================================
    UPSERT FILE FOR A MIGRATION
@@ -10,83 +11,76 @@ export async function upsertMigrationFile({
   file_name,
   file_path
 }) {
-  const client = await getJobClient();
+  if (!migration_id || !migration_type || !file_type) {
+    throw new Error("upsertMigrationFile: required fields missing");
+  }
 
-  await client.query("BEGIN");
+  const transaction = await sequelize.transaction();
 
-  await client.query(
-    `
-    DELETE FROM migration_files
-    WHERE migration_id = $1
-      AND file_type = $2
-    `,
-    [migration_id, file_type]
-  );
+  try {
+    await sequelize.query(
+      `
+      DELETE FROM migration_files
+      WHERE migration_id = :migration_id
+        AND file_type = :file_type
+      `,
+      {
+        replacements: { migration_id, file_type },
+        transaction
+      }
+    );
 
-  await client.query(
-    `
-    INSERT INTO migration_files (
-      migration_id,
-      migration_type,
-      file_type,
-      file_name,
-      file_path,
-      dry_run_status,
-      execution_status,
-      created_at,
-      updated_at
-    )
-    VALUES (
-      $1, $2, $3, $4, $5,
-      'pending',
-      'pending',
-      NOW(),
-      NOW()
-    )
-    `,
-    [
-      migration_id,
-      migration_type,
-      file_type,
-      file_name,
-      file_path
-    ]
-  );
+    const [rows] = await sequelize.query(
+      `
+      INSERT INTO migration_files (
+        migration_id,
+        migration_type,
+        file_type,
+        file_name,
+        file_path,
+        dry_run_status,
+        execution_status,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        :migration_id,
+        :migration_type,
+        :file_type,
+        :file_name,
+        :file_path,
+        'pending',
+        'pending',
+        NOW(),
+        NOW()
+      )
+      RETURNING *
+      `,
+      {
+        replacements: {
+          migration_id,
+          migration_type,
+          file_type,
+          file_name,
+          file_path
+        },
+        type: QueryTypes.INSERT,
+        transaction
+      }
+    );
 
-  await client.query("COMMIT");
+    await transaction.commit();
+    return rows[0];
+
+  } catch (err) {
+    await transaction.rollback();
+    throw err;
+  }
 }
 
-// export async function getMigrationFiles(migrationId) {
-//   if (!migrationId) {
-//     throw new Error("getMigrationFiles: migrationId is required");
-//   }
-
-//   const client = await getJobClient();
-
-//   const res = await client.query(
-//     `
-//     SELECT
-//       id,
-//       migration_id,
-//       migration_type,
-//       file_type,
-//       file_name,
-//       file_path,
-//       dry_run_status,
-//       execution_status,
-//       dry_run_report_path,
-//       created_at,
-//       updated_at
-//     FROM migration_files
-//     WHERE migration_id = $1
-//     ORDER BY created_at ASC
-//     `,
-//     [migrationId]
-//   );
-
-//   return res.rows;
-// }
-
+/* =========================================
+   GET MIGRATION FILES
+========================================= */
 export async function getMigrationFiles(
   migrationId,
   { dry_run_status } = {}
@@ -94,8 +88,6 @@ export async function getMigrationFiles(
   if (!migrationId) {
     throw new Error("getMigrationFiles: migrationId is required");
   }
-
-  const client = await getJobClient();
 
   let query = `
     SELECT
@@ -111,22 +103,29 @@ export async function getMigrationFiles(
       created_at,
       updated_at
     FROM migration_files
-    WHERE migration_id = $1
+    WHERE migration_id = :migration_id
   `;
 
-  const values = [migrationId];
+  const replacements = { migration_id: migrationId };
 
   if (dry_run_status) {
-    query += ` AND dry_run_status = $2`;
-    values.push(dry_run_status);
+    query += ` AND dry_run_status = :dry_run_status`;
+    replacements.dry_run_status = dry_run_status;
   }
 
   query += ` ORDER BY created_at ASC`;
 
-  const res = await client.query(query, values);
-  return res.rows;
+  const rows = await sequelize.query(query, {
+    replacements,
+    type: QueryTypes.SELECT
+  });
+
+  return rows;
 }
 
+/* =========================================
+   UPDATE DRY RUN STATUS
+========================================= */
 export async function updateMigrationFileStatus({
   migration_id,
   file_type,
@@ -139,62 +138,43 @@ export async function updateMigrationFileStatus({
     );
   }
 
-  const ALLOWED_STATUS = [
-    "pending",
-    "running",
-    "failed",
-    "passed"
-  ];
-
+  const ALLOWED_STATUS = ["pending", "running", "failed", "passed"];
   if (!ALLOWED_STATUS.includes(dry_run_status)) {
-    throw new Error(
-      `Invalid dry_run_status: ${dry_run_status}`
-    );
+    throw new Error(`Invalid dry_run_status: ${dry_run_status}`);
   }
 
-  const client = await getJobClient();
-
-  const res = await client.query(
+  const [rows] = await sequelize.query(
     `
     UPDATE migration_files
     SET
-      dry_run_status = $1,
-      dry_run_report_path = COALESCE($2, dry_run_report_path),
+      dry_run_status = :dry_run_status,
+      dry_run_report_path = COALESCE(:dry_run_report_path, dry_run_report_path),
       updated_at = NOW()
-    WHERE migration_id = $3
-      AND file_type = $4
+    WHERE migration_id = :migration_id
+      AND file_type = :file_type
     RETURNING *
     `,
-    [
-      dry_run_status,
-      dry_run_report_path,
-      migration_id,
-      file_type
-    ]
+    {
+      replacements: {
+        dry_run_status,
+        dry_run_report_path,
+        migration_id,
+        file_type
+      },
+      type: QueryTypes.UPDATE
+    }
   );
 
-  if (res.rowCount === 0) {
-    throw new Error(
-      `No migration file found for ${file_type}`
-    );
+  if (!rows.length) {
+    throw new Error(`No migration file found for ${file_type}`);
   }
 
-  return res.rows[0];
+  return rows[0];
 }
 
-/**
- * 🔥 Updates execution status of a SINGLE migration file
- *
- * execution_status:
- * - pending   (default)
- * - completed (all rows success)
- * - partial   (some success, some failed)
- * - failed    (all rows failed)
- *
- * IMPORTANT:
- * - This is FILE-LEVEL summary
- * - Row-level state is stored elsewhere
- */
+/* =========================================
+   UPDATE EXECUTION STATUS (FILE LEVEL)
+========================================= */
 export async function updateMigrationFileExecutionStatus({
   migration_id,
   file_type,
@@ -207,33 +187,35 @@ export async function updateMigrationFileExecutionStatus({
   }
 
   const ALLOWED_STATUS = ["pending", "completed", "partial", "failed"];
-
   if (!ALLOWED_STATUS.includes(execution_status)) {
-    throw new Error(
-      `Invalid execution_status: ${execution_status}`
-    );
+    throw new Error(`Invalid execution_status: ${execution_status}`);
   }
 
-  const client = await getJobClient();
-
-  const res = await client.query(
+  const [rows] = await sequelize.query(
     `
     UPDATE migration_files
     SET
-      execution_status = $1,
+      execution_status = :execution_status,
       updated_at = NOW()
-    WHERE migration_id = $2
-      AND file_type = $3
+    WHERE migration_id = :migration_id
+      AND file_type = :file_type
     RETURNING *
     `,
-    [execution_status, migration_id, file_type]
+    {
+      replacements: {
+        execution_status,
+        migration_id,
+        file_type
+      },
+      type: QueryTypes.UPDATE
+    }
   );
 
-  if (res.rowCount === 0) {
+  if (!rows.length) {
     throw new Error(
       `No migration file found for migration_id=${migration_id}, file_type=${file_type}`
     );
   }
 
-  return res.rows[0];
+  return rows[0];
 }

@@ -92,6 +92,7 @@ export async function createMigrationController(req, res) {
       title,
       created_by
     } = req.body;
+    console.log("Creating migration for shop:", shop_id, shop_domain);
 
     if (!shop_id || !shop_domain || !title) {
       return res.status(400).json({
@@ -106,6 +107,8 @@ export async function createMigrationController(req, res) {
       title,
       created_by
     });
+     
+    console.log("Created migration:", migration);
 
     return res.json({
       success: true,

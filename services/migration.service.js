@@ -1,9 +1,9 @@
-import { getJobClient } from "../db/jobClient.js";
+import sequelize from "../db/sequelize.js";
+import { QueryTypes } from "sequelize";
 
 /* ================================
    CREATE MIGRATION (ONCE)
 ================================ */
-
 /**
  * CREATE MIGRATION (NO FILES HERE)
  */
@@ -13,42 +13,59 @@ export async function createMigration({
   title,
   created_by
 }) {
-  const client = await getJobClient();
-
-  const res = await client.query(
+  const [rows] = await sequelize.query(
     `
     INSERT INTO migrations (
       shop_id,
       shop_domain,
       title,
       status,
-      created_by
+      created_by,
+      created_at,
+      updated_at
     )
-    VALUES ($1, $2, $3, 'created', $4)
+    VALUES (
+      :shop_id,
+      :shop_domain,
+      :title,
+      'created',
+      :created_by,
+      NOW(),
+      NOW()
+    )
     RETURNING *
     `,
-    [shop_id, shop_domain, title, created_by]
+    {
+      replacements: {
+        shop_id,
+        shop_domain,
+        title,
+        created_by
+      },
+      type: QueryTypes.INSERT
+    }
   );
 
-  return res.rows[0];
+  return rows[0];
 }
 
 /* ================================
    GET MIGRATION BY ID
 ================================ */
 export async function getMigrationById(migration_id) {
-  const client = await getJobClient();
-
-  const res = await client.query(
+  const rows = await sequelize.query(
     `
     SELECT *
     FROM migrations
-    WHERE id = $1
+    WHERE id = :migration_id
     `,
-    [migration_id]
+    {
+      replacements: { migration_id },
+      type: QueryTypes.SELECT
+    }
   );
 
-  return res.rows[0] || null;
+  return rows[0] || null;
 }
 
 /* ================================
@@ -64,42 +81,36 @@ export async function updateMigration(migrationId, updates) {
   }
 
   // ✅ allow only safe columns
-  const ALLOWED_FIELDS = [
-    "status"
-  ];
+  const ALLOWED_FIELDS = ["status"];
 
-  const fields = [];
-  const values = [];
-  let index = 1;
+  const setClauses = [];
+  const replacements = { migrationId };
 
   for (const key of Object.keys(updates)) {
     if (!ALLOWED_FIELDS.includes(key)) {
       throw new Error(`updateMigration: invalid field "${key}"`);
     }
 
-    fields.push(`${key} = $${index}`);
-    values.push(updates[key]);
-    index++;
+    setClauses.push(`${key} = :${key}`);
+    replacements[key] = updates[key];
   }
-
-  values.push(migrationId);
 
   const query = `
     UPDATE migrations
-    SET ${fields.join(", ")},
+    SET ${setClauses.join(", ")},
         updated_at = NOW()
-    WHERE id = $${index}
+    WHERE id = :migrationId
     RETURNING *
   `;
 
-  const client = await getJobClient();
-  const result = await client.query(query, values);
+  const [rows] = await sequelize.query(query, {
+    replacements,
+    type: QueryTypes.UPDATE
+  });
 
-  if (result.rowCount === 0) {
+  if (!rows.length) {
     throw new Error("updateMigration: migration not found");
   }
 
-  return result.rows[0];
+  return rows[0];
 }
-
-
