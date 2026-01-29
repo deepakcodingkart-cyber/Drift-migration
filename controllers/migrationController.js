@@ -1,5 +1,5 @@
-import { createMigration, getMigrationById, updateMigration } from "../services/migration.service.js";
-import { getMigrationFiles } from "../services/migrationFiles.service.js";
+import { createMigration, getMigrationById, updateMigration } from "../db/services/migration.service.js";
+import { getMigrationFiles } from "../db/services/migrationFiles.service.js";
 import { runDryRun } from "../services/dryRunService.js";
 import { executePayments } from "../services/execution/executePayments.service.js";
 import { executeSubscriptions } from "../services/execution/executeSubscriptions.service.js";

@@ -2,8 +2,8 @@ import path from "path";
 import fs from "fs-extra";
 
 import { mergeChunksIfComplete } from "../utils/chunkFile.util.js";
-import { getMigrationById, updateMigration } from "../services/migration.service.js";
-import { upsertMigrationFile } from "../services/migrationFiles.service.js";
+import { getMigrationById, updateMigration } from "../db/services/migration.service.js";
+import { upsertMigrationFile } from "../db/services/migrationFiles.service.js";
 
 const TEMP_DIR = "./temp";
 const UPLOAD_DIR = "./uploads";

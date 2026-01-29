@@ -1,6 +1,6 @@
-import { checkCustomerExists } from "../services/customer.service.js";
-import { getStoreSupportedCurrencies } from "../services/storeCurrency.service.js";
-import { checkVariantExists } from "../services/variant.service.js";
+import { checkCustomerExists } from "../services/shopify/customer.service.js";
+import { getStoreSupportedCurrencies } from "../services/shopify/storeCurrency.service.js";
+import { checkVariantExists } from "../services/shopify/variant.service.js";
 
 export async function shopifyValidation(row, rowIndex) {
 

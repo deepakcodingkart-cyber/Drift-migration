@@ -1,4 +1,4 @@
-import { getMigrationById } from "../services/migration.service.js";
+import { getMigrationById } from "../db/services/migration.service.js";
 import {
   activateSubscriptions,
   pauseSubscriptions,

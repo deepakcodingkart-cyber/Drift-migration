@@ -1,7 +1,7 @@
 import {
   getSuccessfulPaymentsByMigration,
   updatePaymentStatusByShopifyMethod
-} from "../paymentRegistry.service.js";
+} from "../../db/services/paymentRegistry.service.js";
 
 import { revokePaymentMethod } from "../shopify/revokePaymentMethod.js";
 

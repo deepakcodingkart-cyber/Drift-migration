@@ -1,16 +1,16 @@
 import {
   getMigrationFiles,
   updateMigrationFileExecutionStatus
-} from "../migrationFiles.service.js";
+} from "../../db/services/migrationFiles.service.js";
 
 import { parseFileFromPath } from "../../utils/fileParserFromPath.util.js";
 
 import {
   getSubscriptionRegistry,
   upsertSubscriptionRegistry
-} from "../subscriptionRegistry.service.js";
+} from "../../db/services/subscriptionRegistry.service.js";
 
-import { getPaymentRegistryByEmail } from "../paymentRegistry.service.js";
+import { getPaymentRegistryByEmail } from "../../db/services/paymentRegistry.service.js";
 import { createSubscription } from "../shopify/createSubscription.js";
 
 const SUBSCRIPTION_FILE_TYPE = "subscription_csv";

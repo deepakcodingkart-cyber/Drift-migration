@@ -1,44 +1,7 @@
-// import axios from "axios";
-
-// const zipCache = new Map();
-
-// export async function validateZipCode(countryCode, zipCode) {
-//   if (!countryCode || !zipCode) return null;
-
-//   const country = countryCode.toLowerCase();
-//   const zip = String(zipCode).trim();
-//   const cacheKey = `${country}-${zip}`;
-
-//   if (zipCache.has(cacheKey)) {
-//     return zipCache.get(cacheKey);
-//   }
-
-//   const url = `https://api.zippopotam.us/${country}/${zip}`;
-
-//   try {
-//     const res = await axios.get(url, { timeout: 5000 });
-//     zipCache.set(cacheKey, res.data);
-//     return res.data;
-
-//   } catch (err) {
-//     // ✅ 404 = invalid ZIP → expected case
-//     if (err.response?.status === 404) {
-//       zipCache.set(cacheKey, null);
-//       return null;
-//     }
-
-//     // ⚠️ Other errors (network, timeout)
-//     zipCache.set(cacheKey, null);
-//     return null;
-//   }
-// }
-
 
 import axios from "axios";
 import { ApiSupportCountries } from "../constants/apiSupportCountries.js";
 import  { COUNTRIES_RULES }  from "../constants/countries.js" ;
-
-
 
 /**
  * Cache structure:

@@ -1,7 +1,7 @@
 import {
   getSubscriptionsByMigrationAndStatus,
   updateSubscriptionStatus
-} from "../subscriptionRegistry.service.js";
+} from "../../db/services/subscriptionRegistry.service.js";
 
 import { activateSubscription } from "../shopify/activateSubscription.js";
 import { pauseSubscription } from "../shopify/pauseSubscription.js";

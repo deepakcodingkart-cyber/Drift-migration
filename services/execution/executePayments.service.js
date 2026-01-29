@@ -1,11 +1,11 @@
-import { getMigrationFiles, updateMigrationFileExecutionStatus } from "../migrationFiles.service.js";
+import { getMigrationFiles, updateMigrationFileExecutionStatus } from "../../db/services/migrationFiles.service.js";
 import { parseFileFromPath } from "../../utils/fileParserFromPath.util.js";
 import {
   getPaymentRegistry,
   upsertPaymentRegistry
-} from "../paymentRegistry.service.js";
+} from "../../db/services/paymentRegistry.service.js";
 import { createCustomerPaymentMethod } from "../shopify/createCustomerPaymentMethod.js";
-import { buildRemotePaymentReference } from "../shopify/buildRemotePaymentReference.js";
+import { buildRemotePaymentReference } from "../buildRemotePaymentReference.js";
 import { resolveShopifyCustomerByEmail } from "../shopify/resolveShopifyCustomerByEmail.js";
 
 const PAYMENT_FILE_TYPES = [

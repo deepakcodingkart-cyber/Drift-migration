@@ -1,4 +1,4 @@
-import { shopifyQuery } from "../shopify/graphql.js";
+import { shopifyQuery } from "../../shopify/graphql.js";
 
 const VARIANT_QUERY = `
   query ($id: ID!) {

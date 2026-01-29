@@ -2,11 +2,11 @@ import fs from "fs";
 import path from "path";
 
 import { parseFileFromPath } from "../utils/fileParserFromPath.util.js";
-import { updateMigration } from "./migration.service.js";
+import { updateMigration } from "../db/services/migration.service.js";
 import {
   getMigrationFiles,
   updateMigrationFileStatus
-} from "./migrationFiles.service.js";
+} from "../db/services/migrationFiles.service.js";
 
 import { createDryRunCsvWriter } from "../utils/dryRunCsvWriter.util.js";
 
